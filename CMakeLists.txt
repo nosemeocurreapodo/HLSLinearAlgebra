@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Build options
 option(BUILD_TESTS "Build CPU tests using GoogleTest" ON)
-option(BUILD_HLS_TESTS "Build HLS/FPGA tests using Vitis" OFF)
+option(BUILD_HLS_TESTS "Build HLS/FPGA tests using Vitis" ON)
 option(BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 
 include(FetchContent)

@@ -67,6 +67,11 @@ def run_vitis(workspace_path, include_path, part, clock_period_ns, component_nam
     # Note: Eigen is typically installed at /usr/include/eigen3 in Ubuntu images
     eigen_inc = "/usr/include/eigen3"
     cflags = f"-I{include_path} -I{eigen_inc} -DUSE_VITIS"
+    # Allow tests to inject extra compilation flags via environment
+    extra_cflags = os.environ.get('HLS_EXTRA_CFLAGS', '')
+    if extra_cflags:
+        print(f"--- Adding extra cflags from HLS_EXTRA_CFLAGS: {extra_cflags} ---")
+        cflags += f" {extra_cflags}"
     #if vitis_version > "2023.2":
     #    cflags += "-Xclang -fnative-half-type -Xclang -fallow-half-arguments-and-returns"
         

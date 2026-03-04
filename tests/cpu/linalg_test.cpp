@@ -432,7 +432,7 @@ TEST(SO3EigenCompat, LogMatchesEigenAngleAxis)
         Eigen::Vector3d phi_e = angle * axis;
 
         SO3<double> R(q_e.w(), q_e.x(), q_e.y(), q_e.z());
-        Vec3<double> phi_m = SO3<double>::log(R);
+        Vec3<double> phi_m = R.log();
 
         EXPECT_NEAR(phi_e(0), phi_m(0), kTolBig);
         EXPECT_NEAR(phi_e(1), phi_m(1), kTolBig);
@@ -485,7 +485,7 @@ TEST(SO3EigenCompat, ExpLogConsistencySmallAngles)
         Vec3<double> phi_m(phi_e(0), phi_e(1), phi_e(2));
 
         SO3<double> R = SO3<double>::exp(phi_m);
-        Vec3<double> phi2_m = SO3<double>::log(R);
+        Vec3<double> phi2_m = R.log();
 
         EXPECT_NEAR(phi_m(0), phi2_m(0), 1e-6);
         EXPECT_NEAR(phi_m(1), phi2_m(1), 1e-6);

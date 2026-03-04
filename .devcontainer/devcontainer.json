@@ -8,6 +8,9 @@
         //},
         //"image": "bcc003ce2b6d/vivado_2023.2:v1",
         "image": "ubuntu:22.04",
+        "mounts": [
+          "source=/tools/,target=/tools/,type=bind,consistency=cached"
+        ],
         "customizations":
             {
               "vscode": {

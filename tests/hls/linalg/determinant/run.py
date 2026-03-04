@@ -22,9 +22,15 @@ def main():
     cwd = os.getcwd()
     project_root = os.path.abspath(os.path.join(cwd, '..', '..', '..', '..'))
     include_path = os.path.join(project_root, 'include')
-    workspace_path = os.path.join(project_root, "build/" + COMPONENT_NAME)
-
-    run_vitis(workspace_path, include_path, PART, CLOCK_PERIOD_NS, COMPONENT_NAME, TOP_FUNCTION_NAME, SYNTHESIS_FILE, TESTBENCH_FILE, 9, 40)
+    # Allow NUMERIC_FORMAT to be appended to component/workspace name so
+    # multiple format runs don't collide.
+    num_fmt = os.environ.get('NUMERIC_FORMAT', '')
+    if num_fmt:
+        component = COMPONENT_NAME + "_" + num_fmt
+    else:
+        component = COMPONENT_NAME
+    workspace_path = os.path.join(project_root, "build/" + component)
+    run_vitis(workspace_path, include_path, PART, CLOCK_PERIOD_NS, component, TOP_FUNCTION_NAME, SYNTHESIS_FILE, TESTBENCH_FILE, 9, 40)
 
 if __name__ == "__main__":
     main()
