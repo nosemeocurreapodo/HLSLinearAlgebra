@@ -1,17 +1,83 @@
 #pragma once
-
 #include "ap_int.h"
 #include "ap_fixed.h"
 #include "hls_math.h"
 
-// Your project headers (kept)
-// - common.h is assumed to provide round_to(...) and maybe count_leading_simbol(...)
-// - FloatX.h is assumed to provide FloatXUnpacked<...>
 #include "common.h"
 #include "FloatX.h"
 
 // ============================================================
-// Unpacked posit container (sign, regime k, exponent, fraction)
+// Helpers: integer mantissa bitfields + RNE
+// Mantissa bitfield convention (same as FloatX rewrite):
+//  - width = 1 + FRAC
+//  - bit[FRAC] is hidden 1 (value 1.0)
+//  - bit[FRAC-1] is 2^-1
+//  - ...
+//  - bit[0] is 2^-FRAC
+// ============================================================
+
+template <int FRAC>
+static inline ap_uint<FRAC + 1> ufixed_to_mant_bits(const ap_ufixed<FRAC + 1, 1> &u)
+{
+#pragma HLS INLINE
+    return u.range(FRAC, 0);
+}
+
+template <int FRAC>
+static inline ap_ufixed<FRAC + 1, 1> mant_bits_to_ufixed(const ap_uint<FRAC + 1> &mb)
+{
+#pragma HLS INLINE
+    ap_ufixed<FRAC + 1, 1> u;
+    u.range(FRAC, 0) = mb;
+    return u;
+}
+
+// RNE rounding: input mantissa has width (1+OUT_FRAC+EXTRA), hidden bit at (OUT_FRAC+EXTRA).
+// output mantissa width (1+OUT_FRAC), hidden at OUT_FRAC.
+// carry_out indicates rounding overflow to 2.0 => renormalize and increment exponent.
+template <int OUT_FRAC, int EXTRA>
+static inline ap_uint<1 + OUT_FRAC>
+rne_round_mantissa(ap_uint<1 + OUT_FRAC + EXTRA> m, bool &carry_out)
+{
+#pragma HLS INLINE
+    ap_uint<1 + OUT_FRAC> keep = m.range(OUT_FRAC + EXTRA, EXTRA);
+
+    bool guard = (EXTRA >= 1) ? (bool)m[EXTRA - 1] : false;
+
+    bool sticky = false;
+    if constexpr (EXTRA >= 2)
+    {
+        ap_uint<EXTRA - 1> low = m.range(EXTRA - 2, 0);
+        sticky = (low != 0);
+    }
+
+    bool lsb = (bool)keep[0];
+    bool inc = guard && (sticky || lsb);
+
+    ap_uint<1 + OUT_FRAC> rounded = keep + (ap_uint<1 + OUT_FRAC>)inc;
+
+    // overflow if hidden bit flipped to 0 due to carry out (wrap)
+    carry_out = (rounded[OUT_FRAC] == 0);
+    if (carry_out)
+    {
+        rounded = 0;
+        rounded[OUT_FRAC] = 1; // represent 1.0; renorm handled outside
+    }
+    return rounded;
+}
+
+// clamp shift to avoid "shift >= width" corner behavior
+template <typename T>
+static inline int clamp_shift(int sh, int maxw)
+{
+#pragma HLS INLINE
+    if (sh < 0) return 0;
+    if (sh > maxw) return maxw;
+    return sh;
+}
+
+// ============================================================
+// Unpacked posit container: sign, regime k, exponent, mantissa [1,2)
 // ============================================================
 template <int kbits, int ebits, int fbits>
 class posit_unpacked
@@ -20,8 +86,7 @@ public:
     bool sign_;
     ap_int<kbits> k_;
     ap_uint<ebits> exp_;
-    // frac_ includes hidden bit at position fbits (so width is fbits+1, integer bits = 1)
-    ap_ufixed<fbits + 1, 1> frac_;
+    ap_ufixed<fbits + 1, 1> frac_; // hidden bit included
 
     static constexpr int large_k = kbits + ebits + fbits;
 
@@ -34,92 +99,88 @@ public:
         frac_ = 0;
     }
 
-    // Total exponent = k*2^ebits + exp
+    // total exponent: k*2^ebits + exp
     ap_int<32> getTotalExp() const
     {
 #pragma HLS INLINE
         return (ap_int<32>)k_ * (ap_int<32>)(1 << ebits) + (ap_int<32>)exp_;
     }
 
-    // Set k and exp from total exponent using floor division (fast, no divider)
+    // floor-divide by 2^ebits (fast) and remainder in [0, 2^ebits-1]
     void setKEFromTotalExp(ap_int<32> in_exp)
     {
 #pragma HLS INLINE
         ap_int<32> k = floor_div_pow2<ebits>(in_exp);
         ap_int<32> e = in_exp - (k << ebits);
-
-        // e should be in [0, 2^ebits-1] after floor division; keep safety
         if (e < 0)
         {
             e += (1 << ebits);
             k -= 1;
         }
-
         k_ = (ap_int<kbits>)k;
         exp_ = (ap_uint<ebits>)e;
     }
 
-    // ------------------------------------------------------------
-    // Fast encode/decode (no state machine; minimal variable muxing)
-    // ------------------------------------------------------------
+    // =========================================================
+    // Encode / Decode (bitfield-based, no state machine)
+    // =========================================================
     template <int out_nbits, int out_ebits>
     ap_uint<out_nbits> encode() const
     {
 #pragma HLS INLINE
         ap_uint<out_nbits> out = 0;
 
-        // Zero
-        if (frac_ == 0)
-            return 0;
+        // zero
+        if (frac_ == 0) return 0;
 
         out[out_nbits - 1] = sign_;
 
-        // Regime encoding
-        const bool reg_bit = (k_ < 0); // negative k => 1s run, positive k => 0s run
-        ap_uint<out_nbits> run = (k_ >= 0) ? (ap_uint<out_nbits>)(k_ + 1)
-                                           : (ap_uint<out_nbits>)(-k_);
+        // regime: run length
+        bool regbit = (k_ < 0);
+        ap_uint<out_nbits> run = (k_ >= 0) ? (ap_uint<out_nbits>)(k_ + 1) : (ap_uint<out_nbits>)(-k_);
 
-        // Saturate if regime would eat everything (convention: all regime bits)
+        // saturate if regime consumes everything
         if (run >= (out_nbits - 1))
         {
-            out(out_nbits - 2, 0) = reg_bit ? ap_uint<out_nbits - 1>(-1) : ap_uint<out_nbits - 1>(0);
+            out(out_nbits - 2, 0) = regbit ? ap_uint<out_nbits - 1>(-1) : ap_uint<out_nbits - 1>(0);
             return out;
         }
 
         int idx = out_nbits - 2;
 
-    ENCODE_REGIME:
-        for (int i = 0; i < out_nbits - 1; i++)
+    ENCODE_REG:
+        for (int i = 0; i < out_nbits - 1; ++i)
         {
 #pragma HLS UNROLL
-            if (i < (int)run)
-                out[idx - i] = reg_bit;
+            if (i < (int)run) out[idx - i] = regbit;
         }
         idx -= (int)run;
 
         // terminating bit
-        if (idx >= 0)
-        {
-            out[idx] = !reg_bit;
-            idx--;
-        }
+        out[idx] = !regbit;
+        idx -= 1;
 
-        // exponent bits (truncate if not enough space)
-        const int avail1 = (idx >= 0) ? (idx + 1) : 0;
-        const int expbits = (avail1 < out_ebits) ? avail1 : out_ebits;
-
+        // exponent bits
+        int expbits = (idx >= 0) ? hls::min((int)out_ebits, idx + 1) : 0;
         if (expbits > 0)
         {
             out(idx, idx - expbits + 1) = exp_(out_ebits - 1, out_ebits - expbits);
             idx -= expbits;
         }
 
-        // fraction bits (top bits below hidden bit)
-        const int fracbits = (idx >= 0) ? (idx + 1) : 0;
+        // fraction bits: use mantissa bitfield, drop hidden 1
+        int fracbits = (idx >= 0) ? (idx + 1) : 0;
         if (fracbits > 0)
         {
-            // frac_ layout: [fbits:0] with hidden bit at [fbits]
-            out(idx, 0) = frac_(fbits - 1, fbits - fracbits);
+            ap_uint<fbits + 1> mant = ufixed_to_mant_bits<fbits>(frac_);
+            // want top fracbits from mant[fbits-1:0]
+            // pack into out[idx:0] MSB-first
+        PACK_FRAC:
+            for (int i = 0; i < fracbits; ++i)
+            {
+#pragma HLS UNROLL
+                out[idx - i] = mant[fbits - 1 - i];
+            }
         }
 
         return out;
@@ -129,51 +190,41 @@ public:
     void decode(const ap_uint<in_nbits> &bits)
     {
 #pragma HLS INLINE
-        sign_ = bits[in_nbits - 1];
-
-        // Zero
         if (bits == 0)
         {
-            k_ = 0;
-            exp_ = 0;
-            frac_ = 0;
+            sign_ = 0; k_ = 0; exp_ = 0; frac_ = 0;
             return;
         }
 
-        const bool regbit = bits[in_nbits - 2];
+        sign_ = bits[in_nbits - 1];
+        bool regbit = bits[in_nbits - 2];
 
-        // Payload below sign+regbit
         constexpr int PAY_W = in_nbits - 2;
         ap_uint<PAY_W> payload = bits(PAY_W - 1, 0);
 
-        // Count leading run of regbit starting at MSB of payload
-        ap_uint<clog2<PAY_W + 1>::value> run =
-            count_leading_symbol<PAY_W>(payload, regbit);
+        // run length of regbit from MSB of payload
+        ap_uint<clog2<PAY_W + 1>::value> run = count_leading_symbol<PAY_W>(payload, regbit);
 
-        // Saturated / special if it consumes all payload
         if (run >= PAY_W)
         {
+            // saturated/special
             k_ = (ap_int<kbits>)large_k;
             exp_ = 0;
             frac_ = 1.0;
             return;
         }
 
-        // Compute k from run
-        // regbit==0 => k = run-1
-        // regbit==1 => k = -run
+        // k
         k_ = (regbit == 0) ? (ap_int<kbits>)((ap_int<32>)run - 1)
                            : (ap_int<kbits>)(-(ap_int<32>)run);
 
-        // Drop (run + 1 terminating bit)
+        // drop run + terminating bit
         ap_uint<PAY_W> rest = payload << (run + 1);
-
         int avail = PAY_W - (int)(run + 1);
 
-        // Exponent
+        // exponent bits
         exp_ = 0;
-        int expbits = (avail > 0) ? ((avail < in_ebits) ? avail : in_ebits) : 0;
-
+        int expbits = (avail > 0) ? hls::min((int)in_ebits, avail) : 0;
         if (expbits > 0)
         {
             exp_ = rest(PAY_W - 1, PAY_W - expbits);
@@ -181,20 +232,28 @@ public:
             avail -= expbits;
         }
 
-        // Fraction: hidden bit + remaining bits
-        frac_ = 0;
-        frac_[fbits] = 1;
+        // fraction bits -> build mantissa bitfield
+        ap_uint<fbits + 1> mant = 0;
+        mant[fbits] = 1;
 
-        int fracbits = (avail > 0) ? ((avail < fbits) ? avail : fbits) : 0;
+        int fracbits = (avail > 0) ? hls::min((int)fbits, avail) : 0;
         if (fracbits > 0)
         {
-            frac_(fbits - 1, fbits - fracbits) = rest(PAY_W - 1, PAY_W - fracbits);
+        UNPACK_FRAC:
+            for (int i = 0; i < fracbits; ++i)
+            {
+#pragma HLS UNROLL
+                mant[fbits - 1 - i] = rest[PAY_W - 1 - i];
+            }
         }
+
+        frac_ = mant_bits_to_ufixed<fbits>(mant);
     }
 
-    // -------------------------
-    // Arithmetic (kept, cleaned)
-    // -------------------------
+    // =========================================================
+    // Arithmetic: one rounding per operation (RNE via bitfields)
+    // =========================================================
+
     posit_unpacked operator-() const
     {
 #pragma HLS INLINE
@@ -203,119 +262,176 @@ public:
         return r;
     }
 
+    // Add (one rounding at the end)
     posit_unpacked operator+(const posit_unpacked &rhs) const
     {
 #pragma HLS INLINE
-        // total exp diff: (k1-k2)*2^ebits + (e1-e2)
-        ap_int<32> diff_texp =
-            ((ap_int<32>)k_ - (ap_int<32>)rhs.k_) * (ap_int<32>)(1 << ebits) +
-            (ap_int<32>)exp_ - (ap_int<32>)rhs.exp_;
+        if (frac_ == 0) return rhs;
+        if (rhs.frac_ == 0) return *this;
 
-        // widen a bit to keep headroom
-        ap_fixed<fbits + 2, 2> frac1 = frac_;
-        ap_fixed<fbits + 2, 2> frac2 = rhs.frac_;
+        // Compare total exponents to align
+        ap_int<32> texp_a = getTotalExp();
+        ap_int<32> texp_b = rhs.getTotalExp();
+        ap_int<32> diff = texp_a - texp_b;
 
-        ap_int<32> k = 0;
-        ap_int<32> e = 0;
-        bool sign = 0;
+        // guard bits for safe alignment + sticky
+        constexpr int G = 6;
+        constexpr int MF = fbits + G;
 
-        if (diff_texp >= 0)
+        ap_uint<fbits + 1> ma0 = ufixed_to_mant_bits<fbits>(frac_);
+        ap_uint<fbits + 1> mb0 = ufixed_to_mant_bits<fbits>(rhs.frac_);
+
+        ap_uint<MF + 1> ma = ((ap_uint<MF + 1>)ma0) << G;
+        ap_uint<MF + 1> mb = ((ap_uint<MF + 1>)mb0) << G;
+
+        ap_int<32> base_texp = texp_a;
+        bool base_sign = sign_;
+
+        if (diff >= 0)
         {
-            sign = sign_;
-            k = (ap_int<32>)k_;
-            e = (ap_int<32>)exp_;
-
-            // align rhs
-            frac2 = frac2 >> (int)diff_texp;
-            if (sign_ != rhs.sign_)
-                frac2 = -frac2;
+            int sh = clamp_shift((int)diff, MF + 1);
+            // sticky: if shift drops bits, fold into LSB
+            if (sh > 0 && sh <= (MF + 1))
+            {
+                ap_uint<MF + 1> dropped = mb & ((ap_uint<MF + 1>)((1ULL << sh) - 1));
+                mb >>= sh;
+                if (dropped != 0) mb[0] = 1;
+            }
+            base_texp = texp_a;
+            base_sign = sign_;
         }
         else
         {
-            sign = rhs.sign_;
-            k = (ap_int<32>)rhs.k_;
-            e = (ap_int<32>)rhs.exp_;
-
-            frac1 = frac1 >> (int)(-diff_texp);
-            if (sign_ != rhs.sign_)
-                frac1 = -frac1;
+            int sh = clamp_shift((int)(-diff), MF + 1);
+            if (sh > 0 && sh <= (MF + 1))
+            {
+                ap_uint<MF + 1> dropped = ma & ((ap_uint<MF + 1>)((1ULL << sh) - 1));
+                ma >>= sh;
+                if (dropped != 0) ma[0] = 1;
+            }
+            base_texp = texp_b;
+            base_sign = rhs.sign_;
         }
 
-        ap_ufixed<fbits + 3, 3> frac = (ap_ufixed<fbits + 3, 3>)(frac1 + frac2);
+        // signed add
+        ap_int<MF + 3> sa = (ap_int<MF + 3>)ma;
+        ap_int<MF + 3> sb = (ap_int<MF + 3>)mb;
+        if (sign_)     sa = -sa;
+        if (rhs.sign_) sb = -sb;
 
-        // normalize
-        if (frac == 0)
+        ap_int<MF + 4> sum = sa + sb;
+
+        posit_unpacked out;
+        if (sum == 0)
         {
-            posit_unpacked out;
-            out.sign_ = 0;
-            out.k_ = 0;
-            out.exp_ = 0;
-            out.frac_ = 0;
+            out.sign_ = 0; out.k_ = 0; out.exp_ = 0; out.frac_ = 0;
             return out;
         }
 
-        // NOTE: assumes you have a fast count_leading_simbol(frac) in common.h.
-        // If not, replace with a small unrolled leading-one detector.
-        int shift = count_leading_simbol(frac) - 2;
-        if (shift > 0)
+        bool s = (sum < 0);
+        ap_uint<MF + 3> um = s ? (ap_uint<MF + 3>)(-sum) : (ap_uint<MF + 3>)sum;
+
+        ap_int<32> texp = base_texp;
+
+        // normalize so hidden bit at MF
+        if (um[MF + 1]) // >=2
         {
-            frac <<= shift;
-            e -= shift;
+            um >>= 1;
+            texp += 1;
         }
-        else if (shift < 0)
+        else if (!um[MF]) // <1
         {
-            frac >>= (-shift);
-            e += (-shift);
+            int lz = (int)count_leading_symbol(um, 0);
+            int first_one = (MF + 2) - lz;
+            int sh = MF - first_one;
+            sh = clamp_shift(sh, MF + 1);
+            um <<= sh;
+            texp -= sh;
         }
 
-        // normalize exponent into [0, 2^ebits-1], adjusting k
-        if (e >= (1 << ebits))
-        {
-            e -= (1 << ebits);
-            k += 1;
-        }
-        if (e < 0)
-        {
-            e += (1 << ebits);
-            k -= 1;
-        }
+        // one RNE rounding from MF -> fbits
+        constexpr int EXTRA = MF - fbits;
+        ap_uint<1 + fbits + EXTRA> mwide = um.range(MF, 0); // width = 1+MF
+        // mwide expects hidden at fbits+EXTRA == MF OK
+        bool carry = false;
+        ap_uint<1 + fbits> mround = rne_round_mantissa<fbits, EXTRA>(mwide, carry);
+        if (carry) texp += 1;
 
-        ap_ufixed<fbits + 3, 3> rfrac = round_to(frac, fbits - 1);
-
-        // normalize fraction again if rounding overflowed
-        if (rfrac >= 2)
-        {
-            rfrac >>= 1;
-            e += 1;
-            if (e >= (1 << ebits))
-            {
-                e -= (1 << ebits);
-                k += 1;
-            }
-        }
-
-        posit_unpacked out;
-        out.sign_ = sign;
-        out.k_ = (ap_int<kbits>)k;
-        out.exp_ = (ap_uint<ebits>)e;
-        out.frac_ = (ap_ufixed<fbits + 1, 1>)rfrac;
+        out.sign_ = s;
+        out.setKEFromTotalExp(texp);
+        out.frac_ = mant_bits_to_ufixed<fbits>(mround);
         return out;
     }
 
     posit_unpacked operator-(const posit_unpacked &rhs) const
     {
 #pragma HLS INLINE
-        posit_unpacked neg = rhs;
-        neg.sign_ = !rhs.sign_;
-        return (*this) + neg;
+        posit_unpacked t = rhs;
+        t.sign_ = !t.sign_;
+        return (*this) + t;
     }
 
+    // Multiply (one rounding at the end)
+    posit_unpacked operator*(const posit_unpacked &rhs) const
+    {
+#pragma HLS INLINE
+        posit_unpacked out;
+        if (frac_ == 0 || rhs.frac_ == 0)
+            return out;
+
+        bool s = sign_ ^ rhs.sign_;
+
+        ap_int<32> texp = getTotalExp() + rhs.getTotalExp();
+
+        ap_uint<fbits + 1> ma = ufixed_to_mant_bits<fbits>(frac_);
+        ap_uint<fbits + 1> mb = ufixed_to_mant_bits<fbits>(rhs.frac_);
+
+        // Multiply mantissas: widths add
+        ap_uint<2 * (fbits + 1)> prod = (ap_uint<2 * (fbits + 1)>)ma * (ap_uint<2 * (fbits + 1)>)mb;
+
+        // prod represents [1,4). hidden position is (2*fbits)
+        // Normalize to [1,2): if top bit indicates >=2, shift right and inc exp
+        constexpr int PH = 2 * fbits; // target hidden after normalization (we'll pick a consistent slice)
+        // Build a convenient window with extra bits for rounding
+        // We'll keep (fbits + EXTRA) fractional bits from normalized mantissa.
+        constexpr int G = 6;
+        constexpr int OUT_MF = fbits + G;
+
+        // Create normalized mantissa bitfield with hidden at OUT_MF
+        // Start by aligning prod's hidden at PH (bit index 2*fbits)
+        // If prod >= 2 -> prod bit (2*fbits+1) == 1
+        ap_uint<2 * (fbits + 1)> p = prod;
+        if (p[2 * fbits + 1])
+        {
+            p >>= 1;
+            texp += 1;
+        }
+
+        // Now hidden is at bit (2*fbits)
+        // We want to extract 1 + OUT_MF bits with hidden at OUT_MF:
+        // take bits [2*fbits : 2*fbits-OUT_MF]
+        ap_uint<1 + OUT_MF> mnorm = 0;
+        mnorm = p.range(2 * fbits, 2 * fbits - OUT_MF);
+
+        // One rounding from OUT_MF -> fbits
+        constexpr int EXTRA = OUT_MF - fbits;
+        bool carry = false;
+        ap_uint<1 + fbits> mround = rne_round_mantissa<fbits, EXTRA>(mnorm, carry);
+        if (carry) texp += 1;
+
+        out.sign_ = s;
+        out.setKEFromTotalExp(texp);
+        out.frac_ = mant_bits_to_ufixed<fbits>(mround);
+        return out;
+    }
+
+    // Divide (one rounding at the end)
     posit_unpacked operator/(const posit_unpacked &rhs) const
     {
 #pragma HLS INLINE
         posit_unpacked out;
 
-        // div by zero => saturated/special (keep your previous convention)
+        // div by zero => your saturated convention
         if (rhs.frac_ == 0)
         {
             out.sign_ = 0;
@@ -324,150 +440,67 @@ public:
             out.frac_ = 0;
             return out;
         }
+        if (frac_ == 0)
+            return out;
 
-        bool sign = sign_ ^ rhs.sign_;
-        ap_int<32> k = (ap_int<32>)k_ - (ap_int<32>)rhs.k_;
-        ap_int<32> e = (ap_int<32>)exp_ - (ap_int<32>)rhs.exp_;
+        bool s = sign_ ^ rhs.sign_;
+        ap_int<32> texp = getTotalExp() - rhs.getTotalExp();
 
-        ap_ufixed<fbits * 2, 2> frac = (ap_ufixed<fbits * 2, 2>)(frac_ / rhs.frac_);
+        ap_uint<fbits + 1> na = ufixed_to_mant_bits<fbits>(frac_);
+        ap_uint<fbits + 1> nb = ufixed_to_mant_bits<fbits>(rhs.frac_);
 
-        // normalize fraction into [1,2)
-        if (frac < 1.0)
+        // Fixed-point division with extra bits:
+        constexpr int G = 6;
+        constexpr int OUT_MF = fbits + G;
+        // We want quotient mantissa with hidden at OUT_MF:
+        // compute q = (na << OUT_MF) / nb  => q has ~ (1+OUT_MF) bits
+        ap_uint<(fbits + 1) + OUT_MF + 2> num = ((ap_uint<(fbits + 1) + OUT_MF + 2>)na) << OUT_MF;
+        ap_uint<1 + OUT_MF + 2> q = (ap_uint<1 + OUT_MF + 2>)(num / nb);
+
+        // Normalize q into [1,2): ensure hidden at OUT_MF
+        if (q[OUT_MF + 1]) // >=2
         {
-            frac <<= 1;
-            e -= 1;
+            q >>= 1;
+            texp += 1;
+        }
+        else if (!q[OUT_MF]) // <1
+        {
+            q <<= 1;
+            texp -= 1;
         }
 
-        // wrap exponent
-        if (e < 0)
-        {
-            e += (1 << ebits);
-            k -= 1;
-        }
+        // One rounding OUT_MF -> fbits (q currently has hidden at OUT_MF, plus maybe 1 spare bit)
+        ap_uint<1 + OUT_MF> mnorm = q.range(OUT_MF, 0);
 
-        ap_ufixed<fbits + 1, 2> rfrac = round_to(frac, fbits - 1);
+        constexpr int EXTRA = OUT_MF - fbits;
+        bool carry = false;
+        ap_uint<1 + fbits> mround = rne_round_mantissa<fbits, EXTRA>(mnorm, carry);
+        if (carry) texp += 1;
 
-        if (rfrac >= 2)
-        {
-            rfrac >>= 1;
-            e += 1;
-        }
-
-        if (e >= (1 << ebits))
-        {
-            e -= (1 << ebits);
-            k += 1;
-        }
-
-        if (rfrac == 0)
-        {
-            sign = 0;
-            k = 0;
-            e = 0;
-        }
-
-        out.sign_ = sign;
-        out.k_ = (ap_int<kbits>)k;
-        out.exp_ = (ap_uint<ebits>)e;
-        out.frac_ = (ap_ufixed<fbits + 1, 1>)rfrac;
+        out.sign_ = s;
+        out.setKEFromTotalExp(texp);
+        out.frac_ = mant_bits_to_ufixed<fbits>(mround);
         return out;
     }
 };
 
-// Multiply (kept as free function, cleaned)
-template <int kbits, int ebits, int fbits>
-static inline posit_unpacked<kbits, ebits, fbits>
-posit_mult(const posit_unpacked<kbits, ebits, fbits> &lhs,
-           const posit_unpacked<kbits, ebits, fbits> &rhs)
-{
-#pragma HLS INLINE
-    posit_unpacked<kbits, ebits, fbits> out;
-
-    bool sign = lhs.sign_ ^ rhs.sign_;
-    ap_int<32> k = (ap_int<32>)lhs.k_ + (ap_int<32>)rhs.k_;
-    ap_int<32> e = (ap_int<32>)lhs.exp_ + (ap_int<32>)rhs.exp_;
-
-    ap_ufixed<fbits * 2 + 2, 2> frac = (ap_ufixed<fbits * 2 + 2, 2>)(lhs.frac_ * rhs.frac_);
-
-    if (frac == 0)
-    {
-        out.sign_ = 0;
-        out.k_ = 0;
-        out.exp_ = 0;
-        out.frac_ = 0;
-        return out;
-    }
-
-    if (frac >= 2)
-    {
-        frac >>= 1;
-        e += 1;
-    }
-
-    if (e >= (1 << ebits))
-    {
-        e -= (1 << ebits);
-        k += 1;
-    }
-
-    ap_ufixed<fbits * 2, 2> rfrac = round_to(frac, fbits - 1);
-
-    if (rfrac >= 2)
-    {
-        rfrac >>= 1;
-        e += 1;
-    }
-    if (e >= (1 << ebits))
-    {
-        e -= (1 << ebits);
-        k += 1;
-    }
-
-    out.sign_ = sign;
-    out.k_ = (ap_int<kbits>)k;
-    out.exp_ = (ap_uint<ebits>)e;
-    out.frac_ = (ap_ufixed<fbits + 1, 1>)rfrac;
-    return out;
-}
-
 // ============================================================
-// Packed Posit class (nbits, ebits) using fast encode/decode
+// Packed Posit<nbits,ebits>
 // ============================================================
 template <int nbits, int ebits>
 class Posit
 {
 public:
     static_assert(nbits >= 3, "Posit: nbits too small");
-    static_assert(ebits >= 0, "Posit: ebits must be >= 0");
-
-    // Fraction bits available excluding hidden bit
-    // Minimal regime consumes 2 bits (run + terminating)
     static constexpr int fbits = nbits - ebits - 3;
     static_assert(fbits >= 0, "Posit: nbits too small for given ebits");
 
-    // Enough bits to store k for worst-case regime length (bounded)
     static constexpr int kbits = clog2<nbits>::value + 1;
-
     using unpacked_t = posit_unpacked<kbits, ebits, fbits>;
 
-    Posit()
-    {
-#pragma HLS INLINE
-        bits_ = 0;
-    }
-
-    Posit(const Posit &other)
-    {
-#pragma HLS INLINE
-        bits_ = other.bits_;
-    }
-
-    Posit &operator=(const Posit &other)
-    {
-#pragma HLS INLINE
-        bits_ = other.bits_;
-        return *this;
-    }
+    Posit() { #pragma HLS INLINE bits_ = 0; }
+    Posit(const Posit &o) { #pragma HLS INLINE bits_ = o.bits_; }
+    Posit &operator=(const Posit &o) { #pragma HLS INLINE bits_ = o.bits_; return *this; }
 
     explicit Posit(const unpacked_t &u)
     {
@@ -475,37 +508,41 @@ public:
         bits_ = u.template encode<nbits, ebits>();
     }
 
-    // ----------------------------
-    // Constructors from primitives
-    // ----------------------------
-    explicit Posit(int c)
-    {
-#pragma HLS INLINE
-        from_int((ap_int<32>)c);
-    }
-
-    explicit Posit(unsigned int c)
-    {
-#pragma HLS INLINE
-        from_uint((ap_uint<32>)c);
-    }
-
     explicit Posit(float c)
     {
 #pragma HLS INLINE
         ap_uint<32> b = bitcast_u32(c);
-
         FloatXUnpacked<8, 23> fx;
         fx.template decode<32, 8>(b);
 
         unpacked_t u;
-        u.setKEFromTotalExp((ap_int<32>)fx.exp_);
         u.sign_ = fx.sign_;
+        u.setKEFromTotalExp((ap_int<32>)fx.exp_);
 
-        if (23 > fbits)
-            u.frac_ = round_to(fx.frac_, fbits - 1);
+        // copy mantissa bits using bitfields then RNE once to posit fbits
+        ap_uint<23 + 1> fm = fx.frac_.range(23, 0); // hidden at 23
+        if constexpr (23 > fbits)
+        {
+            constexpr int EXTRA = 23 - fbits;
+            bool carry = false;
+            ap_uint<1 + fbits> pm = rne_round_mantissa<fbits, EXTRA>(fm, carry);
+            if (carry) u.setKEFromTotalExp((ap_int<32>)fx.exp_ + 1);
+            u.frac_ = mant_bits_to_ufixed<fbits>(pm);
+        }
         else
-            u.frac_ = fx.frac_;
+        {
+            ap_uint<fbits + 1> pm = 0;
+            pm[fbits] = 1;
+            // map 23 fraction bits into posit fraction field
+            constexpr int COPY = (23 < fbits) ? 23 : fbits;
+        MAPF:
+            for (int i = 0; i < COPY; ++i)
+            {
+#pragma HLS UNROLL
+                pm[fbits - 1 - i] = fm[23 - 1 - i];
+            }
+            u.frac_ = mant_bits_to_ufixed<fbits>(pm);
+        }
 
         bits_ = u.template encode<nbits, ebits>();
     }
@@ -514,168 +551,40 @@ public:
     {
 #pragma HLS INLINE
         ap_uint<64> b = bitcast_u64(c);
-
         FloatXUnpacked<11, 52> fx;
         fx.template decode<64, 11>(b);
 
         unpacked_t u;
-        u.setKEFromTotalExp((ap_int<32>)fx.exp_);
         u.sign_ = fx.sign_;
+        u.setKEFromTotalExp((ap_int<32>)fx.exp_);
 
-        if (52 > fbits)
-            u.frac_ = round_to(fx.frac_, fbits - 1);
-        else
-            u.frac_ = fx.frac_;
-
-        bits_ = u.template encode<nbits, ebits>();
-    }
-
-    template <int fnbits, int fibits>
-    explicit Posit(ap_fixed<fnbits, fibits> c)
-    {
-#pragma HLS INLINE
-        // (Simple conversion: normalize to [1,2) and set exponent)
-        unpacked_t u;
-
-        if (c == 0)
+        ap_uint<52 + 1> fm = fx.frac_.range(52, 0); // hidden at 52
+        if constexpr (52 > fbits)
         {
-            bits_ = 0;
-            return;
+            constexpr int EXTRA = 52 - fbits;
+            bool carry = false;
+            ap_uint<1 + fbits> pm = rne_round_mantissa<fbits, EXTRA>(fm, carry);
+            ap_int<32> texp = (ap_int<32>)fx.exp_ + (carry ? 1 : 0);
+            u.setKEFromTotalExp(texp);
+            u.frac_ = mant_bits_to_ufixed<fbits>(pm);
         }
-
-        bool sign = (c < 0);
-        ap_ufixed<fnbits, fibits> mag = sign ? (ap_ufixed<fnbits, fibits>)(-c) : (ap_ufixed<fnbits, fibits>)c;
-
-        // find exponent by shifting down until <2
-        ap_int<32> exp = 0;
-        ap_ufixed<fnbits, fibits> m = mag;
-
-        // NOTE: this loop is bounded (fnbits). Unroll if fnbits is small and fixed.
-    NORM_LOOP:
-        for (int i = 0; i < fnbits; i++)
+        else
         {
-#pragma HLS UNROLL
-            if (m >= 2)
+            ap_uint<fbits + 1> pm = 0;
+            pm[fbits] = 1;
+            constexpr int COPY = (52 < fbits) ? 52 : fbits;
+        MAPD:
+            for (int i = 0; i < COPY; ++i)
             {
-                m >>= 1;
-                exp++;
+#pragma HLS UNROLL
+                pm[fbits - 1 - i] = fm[52 - 1 - i];
             }
+            u.frac_ = mant_bits_to_ufixed<fbits>(pm);
         }
-
-        u.setKEFromTotalExp(exp);
-        u.sign_ = sign;
-
-        // Build frac_ with hidden bit + fraction bits
-        // m in [1,2). Map to frac_.
-        ap_ufixed<fbits + 1, 1> pf = m; // trunc/resize ok
-        u.frac_ = pf;
 
         bits_ = u.template encode<nbits, ebits>();
     }
 
-    // ----------------------------
-    // Conversions back out
-    // ----------------------------
-    operator unpacked_t() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-        return u;
-    }
-
-    operator int() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-
-        if (u.frac_ == 0)
-            return 0;
-
-        ap_int<32> exp = u.getTotalExp();
-        ap_fixed<fbits * 2 + 4, fbits + 2> v = (ap_fixed<fbits * 2 + 4, fbits + 2>)u.frac_;
-        v = v << (int)exp;
-
-        int r = (int)v;
-        return u.sign_ ? -r : r;
-    }
-
-    operator unsigned int() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-
-        if (u.frac_ == 0)
-            return 0;
-
-        ap_int<32> exp = u.getTotalExp();
-        ap_ufixed<fbits * 2 + 4, fbits + 2> v = (ap_ufixed<fbits * 2 + 4, fbits + 2>)u.frac_;
-        v = v << (int)exp;
-
-        return (unsigned int)v;
-    }
-
-    operator float() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-
-        FloatXUnpacked<8, 23> fx;
-        fx.sign_ = u.sign_;
-        fx.exp_ = u.getTotalExp();
-
-        if (fbits > 23)
-            fx.frac_ = round_to(u.frac_, 22);
-        else
-            fx.frac_ = u.frac_;
-
-        ap_uint<32> b = fx.template encode<32, 8>();
-        return bitcast_f32(b);
-    }
-
-    operator double() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-
-        FloatXUnpacked<11, 52> fx;
-        fx.sign_ = u.sign_;
-        fx.exp_ = u.getTotalExp();
-
-        if (fbits > 52)
-            fx.frac_ = round_to(u.frac_, 51);
-        else
-            fx.frac_ = u.frac_;
-
-        ap_uint<64> b = fx.template encode<64, 11>();
-        return bitcast_f64(b);
-    }
-
-    template <int fnbits, int fibits>
-    operator ap_fixed<fnbits, fibits>() const
-    {
-#pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-
-        if (u.frac_ == 0)
-            return 0;
-
-        ap_int<32> exp = u.getTotalExp();
-        ap_fixed<fnbits + 8, fibits + 4> v = (ap_fixed<fnbits + 8, fibits + 4>)u.frac_;
-        v = v << (int)exp;
-
-        ap_fixed<fnbits, fibits> r = (ap_fixed<fnbits, fibits>)v;
-        return u.sign_ ? (ap_fixed<fnbits, fibits>)(-r) : r;
-    }
-
-    // ----------------------------
-    // Basic ops (packed -> unpacked)
-    // ----------------------------
     unpacked_t unpack() const
     {
 #pragma HLS INLINE
@@ -690,270 +599,71 @@ public:
         bits_ = u.template encode<nbits, ebits>();
     }
 
-    // returning unpacked results matches your current pattern
-    unpacked_t operator+(const unpacked_t &rhs) const
+    // Packed arithmetic (return packed, like FloatX)
+    Posit operator+(const Posit &rhs) const
     {
 #pragma HLS INLINE
-        return unpack() + rhs;
-    }
-    unpacked_t operator-(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        return unpack() - rhs;
-    }
-    unpacked_t operator*(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        return posit_mult(unpack(), rhs);
-    }
-    unpacked_t operator/(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        return unpack() / rhs;
-    }
-    unpacked_t operator-() const
-    {
-#pragma HLS INLINE
-        return -unpack();
+        unpacked_t a = unpack();
+        unpacked_t b = rhs.unpack();
+        unpacked_t s = a + b;
+        return Posit(s);
     }
 
-    // ----------------------------
-    // “Mathy” helpers (packed->packed)
-    // (You had free functions calling methods that were commented out.)
-    // ----------------------------
-    Posit fabs() const
+    Posit operator-(const Posit &rhs) const
+    {
+#pragma HLS INLINE
+        unpacked_t a = unpack();
+        unpacked_t b = rhs.unpack();
+        unpacked_t d = a - b;
+        return Posit(d);
+    }
+
+    Posit operator*(const Posit &rhs) const
+    {
+#pragma HLS INLINE
+        unpacked_t a = unpack();
+        unpacked_t b = rhs.unpack();
+        unpacked_t p = a * b;
+        return Posit(p);
+    }
+
+    Posit operator/(const Posit &rhs) const
+    {
+#pragma HLS INLINE
+        unpacked_t a = unpack();
+        unpacked_t b = rhs.unpack();
+        unpacked_t q = a / b;
+        return Posit(q);
+    }
+
+    operator double() const
     {
 #pragma HLS INLINE
         unpacked_t u = unpack();
-        u.sign_ = 0;
-        return Posit(u);
-    }
 
-    Posit floor() const
-    {
-#pragma HLS INLINE
-        // crude but synthesizable: shift frac by exp, clear fractional bits, renormalize
-        unpacked_t u = unpack();
-        if (u.frac_ == 0)
-            return Posit(u);
+        if (u.frac_ == 0) return 0.0;
 
-        ap_int<32> texp = u.getTotalExp();
+        FloatXUnpacked<11, 52> fx;
+        fx.sign_ = u.sign_;
+        fx.exp_  = u.getTotalExp();
 
-        ap_fixed<fbits * 2 + 8, fbits + 2> v = (ap_fixed<fbits * 2 + 8, fbits + 2>)u.frac_;
-        v = v << (int)texp;
-
-        // clear fractional part
-        const int frac_mask_bits = fbits + 2;
-        if (u.sign_ && (v(frac_mask_bits - 1, 0) != 0))
+        // map posit mantissa to 52-bit float mantissa via bitfield widen (no rounding needed)
+        ap_uint<fbits + 1> pm = u.frac_.range(fbits, 0);
+        ap_uint<52 + 1> fm = 0;
+        fm[52] = 1;
+        constexpr int COPY = (fbits < 52) ? fbits : 52;
+    MAPOUT:
+        for (int i = 0; i < COPY; ++i)
         {
-            v(frac_mask_bits - 1, 0) = 0;
-            v += 1;
+#pragma HLS UNROLL
+            fm[52 - 1 - i] = pm[fbits - 1 - i];
         }
-        else
-        {
-            v(frac_mask_bits - 1, 0) = 0;
-        }
+        fx.frac_.range(52, 0) = fm;
 
-        // renormalize back to [1,2)
-        ap_int<32> exp = texp;
-        ap_ufixed<fbits + 1, 1> m = (ap_ufixed<fbits + 1, 1>)(v >> (int)exp);
-
-        // ensure m in [1,2)
-        if (m >= 2)
-        {
-            m >>= 1;
-            exp += 1;
-        }
-        if (m < 1)
-        {
-            m <<= 1;
-            exp -= 1;
-        }
-
-        unpacked_t r;
-        r.sign_ = u.sign_;
-        r.frac_ = m;
-        r.setKEFromTotalExp(exp);
-        return Posit(r);
-    }
-
-    Posit round() const
-    {
-#pragma HLS INLINE
-        // round-to-nearest: v += 0.5 then floor (cheap-ish)
-        unpacked_t u = unpack();
-        if (u.frac_ == 0)
-            return Posit(u);
-
-        ap_int<32> texp = u.getTotalExp();
-        ap_fixed<fbits * 2 + 8, fbits + 2> v = (ap_fixed<fbits * 2 + 8, fbits + 2>)u.frac_;
-        v = v << (int)texp;
-
-        // add 0.5 in integer domain
-        v += 0.5;
-
-        // clear fractional bits
-        const int frac_mask_bits = fbits + 2;
-        v(frac_mask_bits - 1, 0) = 0;
-
-        // renormalize
-        ap_int<32> exp = texp;
-        ap_ufixed<fbits + 1, 1> m = (ap_ufixed<fbits + 1, 1>)(v >> (int)exp);
-        if (m >= 2)
-        {
-            m >>= 1;
-            exp += 1;
-        }
-        if (m < 1)
-        {
-            m <<= 1;
-            exp -= 1;
-        }
-
-        unpacked_t r;
-        r.sign_ = u.sign_;
-        r.frac_ = m;
-        r.setKEFromTotalExp(exp);
-        return Posit(r);
-    }
-
-    Posit ceil() const
-    {
-#pragma HLS INLINE
-        unpacked_t u = unpack();
-        if (u.frac_ == 0)
-            return Posit(u);
-
-        ap_int<32> texp = u.getTotalExp();
-
-        ap_fixed<fbits * 2 + 8, fbits + 2> v = (ap_fixed<fbits * 2 + 8, fbits + 2>)u.frac_;
-        v = v << (int)texp;
-
-        const int frac_mask_bits = fbits + 2;
-
-        if (!u.sign_ && (v(frac_mask_bits - 1, 0) != 0))
-        {
-            v(frac_mask_bits - 1, 0) = 0;
-            v += 1;
-        }
-        else
-        {
-            v(frac_mask_bits - 1, 0) = 0;
-        }
-
-        // renormalize
-        ap_int<32> exp = texp;
-        ap_ufixed<fbits + 1, 1> m = (ap_ufixed<fbits + 1, 1>)(v >> (int)exp);
-        if (m >= 2)
-        {
-            m >>= 1;
-            exp += 1;
-        }
-        if (m < 1)
-        {
-            m <<= 1;
-            exp -= 1;
-        }
-
-        unpacked_t r;
-        r.sign_ = u.sign_;
-        r.frac_ = m;
-        r.setKEFromTotalExp(exp);
-        return Posit(r);
+        ap_uint<64> b = fx.template encode<64, 11>();
+        return bitcast_f64(b);
     }
 
 private:
     ap_uint<nbits> bits_;
-
-    void from_int(ap_int<32> c)
-    {
-#pragma HLS INLINE
-        if (c == 0)
-        {
-            bits_ = 0;
-            return;
-        }
-
-        bool sign = (c < 0);
-        ap_uint<32> mag = sign ? (ap_uint<32>)(-c) : (ap_uint<32>)c;
-
-        ap_int<32> exp = 0;
-        ap_ufixed<fbits + 4, 4> m = (ap_ufixed<fbits + 4, 4>)mag;
-
-        // normalize to [1,2)
-    INT_NORM:
-        for (int i = 0; i < 32; i++)
-        {
-#pragma HLS UNROLL
-            if (m >= 2.0)
-            {
-                m >>= 1;
-                exp++;
-            }
-        }
-
-        unpacked_t u;
-        u.setKEFromTotalExp(exp);
-        u.sign_ = sign;
-        u.frac_ = (ap_ufixed<fbits + 1, 1>)m;
-
-        bits_ = u.template encode<nbits, ebits>();
-    }
-
-    void from_uint(ap_uint<32> c)
-    {
-#pragma HLS INLINE
-        if (c == 0)
-        {
-            bits_ = 0;
-            return;
-        }
-
-        ap_int<32> exp = 0;
-        ap_ufixed<fbits + 4, 4> m = (ap_ufixed<fbits + 4, 4>)c;
-
-    UINT_NORM:
-        for (int i = 0; i < 32; i++)
-        {
-#pragma HLS UNROLL
-            if (m >= 2.0)
-            {
-                m >>= 1;
-                exp++;
-            }
-        }
-
-        unpacked_t u;
-        u.setKEFromTotalExp(exp);
-        u.sign_ = 0;
-        u.frac_ = (ap_ufixed<fbits + 1, 1>)m;
-
-        bits_ = u.template encode<nbits, ebits>();
-    }
 };
-
-// Free-function wrappers (now these exist and compile)
-template <int nbits, int ebits>
-static inline Posit<nbits, ebits> fabs(const Posit<nbits, ebits> &p)
-{
-#pragma HLS INLINE
-    return p.fabs();
-}
-template <int nbits, int ebits>
-static inline Posit<nbits, ebits> floor(const Posit<nbits, ebits> &p)
-{
-#pragma HLS INLINE
-    return p.floor();
-}
-template <int nbits, int ebits>
-static inline Posit<nbits, ebits> round(const Posit<nbits, ebits> &p)
-{
-#pragma HLS INLINE
-    return p.round();
-}
-template <int nbits, int ebits>
-static inline Posit<nbits, ebits> ceil(const Posit<nbits, ebits> &p)
-{
-#pragma HLS INLINE
-    return p.ceil();
-}

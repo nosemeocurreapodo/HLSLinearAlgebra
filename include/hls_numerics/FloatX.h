@@ -1,163 +1,244 @@
 #pragma once
-
 #include "ap_int.h"
 #include "ap_fixed.h"
-#include "common.h"
+#include "common.h" // bitcast_u32/u64, bitcast_f32/f64, clamp_int, fbias<>, count_leading_symbol
 
 // ============================================================
-// FloatX: simplified float-like format for HLS
-// Layout: [sign][exp(out_ebits)][frac(OUT_FBITS)]
-// - Zero is all bits == 0
-// - No NaN/Inf/denormals (you can add later if needed)
-// - Unpacked representation uses:
-//     sign_  : bool
-//     exp_   : unbiased exponent (signed)
-//     frac_  : mantissa in [1,2) with hidden bit included (ap_ufixed<fbits+1,1>)
-// ============================================================
-//
-// Key fixes / optimizations vs your current version:
-// 1) Addition normalization now counts leading zeros on *m's own bit-width*,
-//    not on some wider "sum" slice. This fixes large errors like your -50.25+25.125 case.
-// 2) All variable shifts are clamped to avoid "shift by >= width" corner behaviors.
-// 3) Rounding overflow is handled consistently (m -> 2.0 => shift right, exp++).
-// 4) No reinterpret_cast bit-punning; relies on bitcast helpers expected in common.h
-//    (bitcast_u32/u64 and bitcast_f32/f64). If your common.h doesn't have them,
-//    add the union versions there.
+// Bitfield RNE rounding for mantissa in [1,2)
+// Mantissa bitfield convention (integer bits only):
+//   - width = 1 + FRAC
+//   - bit[FRAC] is the hidden 1 (value 1.0)
+//   - bit[FRAC-1] is 2^-1
+//   ...
+//   - bit[0] is 2^-FRAC
 // ============================================================
 
+// Round mantissa with EXTRA low bits down to OUT_FRAC fractional bits (RNE).
+// Input: m has width = 1 + OUT_FRAC + EXTRA, with hidden 1 at bit (OUT_FRAC+EXTRA).
+// Output: rounded mantissa width = 1 + OUT_FRAC, hidden 1 at bit OUT_FRAC.
+// Returns: rounded mantissa and a carry_out meaning "overflow to 2.0" (needs renorm).
+template <int OUT_FRAC, int EXTRA>
+static inline ap_uint<1 + OUT_FRAC> rne_round_mantissa(ap_uint<1 + OUT_FRAC + EXTRA> m, bool &carry_out)
+{
+#pragma HLS INLINE
+    // Keep top (1+OUT_FRAC) bits
+    ap_uint<1 + OUT_FRAC> keep = m.range(OUT_FRAC + EXTRA, EXTRA);
+
+    // Guard bit is the next bit below kept LSB
+    bool guard = (EXTRA >= 1) ? (bool)m[EXTRA - 1] : false;
+
+    // Sticky is OR of all bits below guard
+    bool sticky = false;
+    if constexpr (EXTRA >= 2)
+    {
+#pragma HLS INLINE
+        ap_uint<EXTRA - 1> low = m.range(EXTRA - 2, 0);
+        sticky = (low != 0);
+    }
+
+    // LSB of kept part (for ties-to-even)
+    bool lsb = (bool)keep[0];
+
+    // RNE increment condition
+    bool inc = guard && (sticky || lsb);
+
+    ap_uint<1 + OUT_FRAC> rounded = keep + (ap_uint<1 + OUT_FRAC>)inc;
+
+    // If rounding overflowed (e.g. 1.111.. + 1 ulp => 10.000..)
+    carry_out = (rounded[OUT_FRAC] == 0); // hidden bit dropped -> overflow
+    if (carry_out)
+    {
+        // After overflow, value is exactly 2.0 in this fixed field; renorm is handled outside.
+        // rounded currently wrapped; set it to 1.0 (i.e., shift right by 1 will be done outside).
+        // Easiest: restore as 1.0 with zero fraction
+        rounded = 0;
+        rounded[OUT_FRAC] = 1;
+    }
+
+    return rounded;
+}
+
+// Convert mantissa bitfield to ap_ufixed<FRAC+1,1> safely
+template <int FRAC>
+static inline ap_ufixed<FRAC + 1, 1> mant_bits_to_ufixed(const ap_uint<FRAC + 1> &mb)
+{
+#pragma HLS INLINE
+    ap_ufixed<FRAC + 1, 1> u;
+    u.range(FRAC, 0) = mb;
+    return u;
+}
+
+// Convert ap_ufixed<FRAC+1,1> to mantissa bitfield safely
+template <int FRAC>
+static inline ap_uint<FRAC + 1> ufixed_to_mant_bits(const ap_ufixed<FRAC + 1, 1> &u)
+{
+#pragma HLS INLINE
+    return u.range(FRAC, 0);
+}
+
+// ============================================================
+// Unpacked FloatX: sign + unbiased exponent + mantissa [1,2)
+// ============================================================
 template <int ebits, int fbits>
 class FloatXUnpacked
 {
 public:
     bool sign_;
-    ap_int<ebits + 3> exp_;          // unbiased exponent with headroom
-    ap_ufixed<fbits + 1, 1> frac_;   // mantissa in [1,2), hidden bit included when nonzero
+    ap_int<ebits + 6> exp_;        // unbiased exponent
+    ap_ufixed<fbits + 1, 1> frac_; // [1,2) hidden bit included
 
     FloatXUnpacked()
     {
 #pragma HLS INLINE
         sign_ = 0;
-        exp_  = 0;
+        exp_ = 0;
         frac_ = 0;
     }
 
-    // -----------------------------------------
-    // Decode packed float-like into unpacked
-    // -----------------------------------------
+    // Decode packed -> unpacked (no rounding)
     template <int in_nbits, int in_ebits>
     void decode(const ap_uint<in_nbits> &bits)
     {
 #pragma HLS INLINE
-        static_assert(in_nbits >= 1 + in_ebits, "FloatXUnpacked::decode: bad sizes");
         constexpr int IN_FBITS = in_nbits - 1 - in_ebits;
 
         if (bits == 0)
         {
             sign_ = 0;
-            exp_  = 0;
+            exp_ = 0;
             frac_ = 0;
             return;
         }
 
         sign_ = bits[in_nbits - 1];
-
         ap_uint<in_ebits> bexp = bits(in_nbits - 2, in_nbits - 1 - in_ebits);
+        exp_ = (ap_int<ebits + 6>)((ap_int<in_ebits + 1>)bexp - (ap_int<in_ebits + 1>)fbias<in_ebits>::value);
 
-        // unbiased exponent = bexp - bias
-        exp_ = (ap_int<ebits + 3>)((ap_int<in_ebits + 1>)bexp - (ap_int<in_ebits + 1>)fbias<in_ebits>::value);
-
-        // build mantissa in [1,2): implicit 1 + IN_FBITS frac bits
-        ap_ufixed<IN_FBITS + 1, 1> m;
-        m[IN_FBITS] = 1;
+        // Mantissa bits: hidden 1 + IN_FBITS fraction bits in LSBs
+        ap_uint<IN_FBITS + 1> mant = 0;
+        mant[IN_FBITS] = 1;
         if (IN_FBITS > 0)
-            m(IN_FBITS - 1, 0) = bits(IN_FBITS - 1, 0);
+            mant(IN_FBITS - 1, 0) = bits(IN_FBITS - 1, 0);
 
-        // resize/round to local fbits
-        if (IN_FBITS > fbits)
+        // Resize mantissa to our fbits by trunc/zero-extend (NO rounding)
+        ap_uint<fbits + 1> tgt = 0;
+        tgt[fbits] = 1;
+
+        constexpr int COPY = (IN_FBITS < fbits) ? IN_FBITS : fbits;
+    COPY_LOOP:
+        for (int i = 0; i < COPY; ++i)
         {
-            ap_ufixed<IN_FBITS + 1, 1> mr = round_to(m, fbits - 1);
-            frac_ = (ap_ufixed<fbits + 1, 1>)mr;
-        }
-        else
-        {
-            frac_ = (ap_ufixed<fbits + 1, 1>)m;
+#pragma HLS UNROLL
+            tgt[fbits - 1 - i] = mant[IN_FBITS - 1 - i]; // 2^-(i+1)
         }
 
-        // rounding overflow => renormalize
-        if (frac_ >= 2)
-        {
-            frac_ >>= 1;
-            exp_ += 1;
-        }
+        frac_ = mant_bits_to_ufixed<fbits>(tgt);
     }
 
-    // -----------------------------------------
-    // Encode unpacked into packed float-like
-    // -----------------------------------------
+    // Encode unpacked -> packed (ONE rounding here to OUT_FBITS using RNE)
     template <int out_nbits, int out_ebits>
     ap_uint<out_nbits> encode() const
     {
 #pragma HLS INLINE
-        static_assert(out_nbits >= 1 + out_ebits, "FloatXUnpacked::encode: bad sizes");
         constexpr int OUT_FBITS = out_nbits - 1 - out_ebits;
 
         if (frac_ == 0)
             return 0;
 
-        // Defensive normalize to [1,2)
-        ap_int<ebits + 3> e = exp_;
-        ap_ufixed<fbits + 1, 1> m = frac_;
+        // normalize defensively
+        ap_int<ebits + 6> e = exp_;
+        ap_uint<fbits + 1> mant = ufixed_to_mant_bits<fbits>(frac_);
 
-        if (m >= 2)
+        // If mantissa is not in [1,2) adjust (rare)
+        // mant[fbits] should be 1 for normal nonzero
+        if (mant[fbits] == 0)
         {
-            m >>= 1;
-            e += 1;
-        }
-        else if (m < 1)
-        {
-            m <<= 1;
-            e -= 1;
+            // shift left until hidden bit becomes 1
+            int lz = (int)count_leading_symbol(mant, 0);
+            int sh = lz - 1;
+            if (sh < 0)
+                sh = 0;
+            if (sh > fbits)
+                sh = fbits;
+            mant <<= sh;
+            e -= sh;
         }
 
-        // bias exponent and clamp to representable range (no Inf/NaN)
+        // Round mantissa to OUT_FBITS using integer RNE:
+        if constexpr (OUT_FBITS == fbits)
+        {
+            // no mantissa rounding needed
+        }
+        else if constexpr (OUT_FBITS < fbits)
+        {
+            constexpr int EXTRA = fbits - OUT_FBITS;
+            ap_uint<1 + OUT_FBITS + EXTRA> mwide = mant.range(fbits, EXTRA ? 0 : 0); // take all bits (same width)
+            // mwide expects hidden at (OUT_FBITS+EXTRA)
+            // Our mant hidden is at fbits, so this matches.
+            bool carry = false;
+            ap_uint<1 + OUT_FBITS> mround = rne_round_mantissa<OUT_FBITS, EXTRA>(mwide, carry);
+            if (carry)
+            {
+                // overflow -> renorm (value was 2.0), set mant=1.0 and increment exponent
+                e += 1;
+            }
+            // replace mant with rounded-sized version, then expand back for packing
+            ap_uint<fbits + 1> newmant = 0;
+            newmant[fbits] = 1;
+            // copy rounded fraction bits into the top bits of our mant field
+            // rounded hidden at OUT_FBITS -> map to fbits
+            // easiest: construct pack mant directly later; here we just use mround for packing
+            // We'll pack using mround below.
+            // (so skip storing back into newmant)
+            mant = 0; // not used further in this branch
+            // pack directly from mround below
+            // compute biased exponent now:
+            const int max_bexp = (1 << out_ebits) - 1;
+            int bexp_i = (int)((ap_int<out_ebits + 2>)e + (ap_int<out_ebits + 2>)fbias<out_ebits>::value);
+            bexp_i = clamp_int(bexp_i, 0, max_bexp);
+            ap_uint<out_ebits> bexp_u = (ap_uint<out_ebits>)bexp_i;
+
+            ap_uint<out_nbits> out = 0;
+            out[out_nbits - 1] = sign_;
+            out(out_nbits - 2, out_nbits - 1 - out_ebits) = bexp_u;
+            if (OUT_FBITS > 0)
+                out(OUT_FBITS - 1, 0) = mround(OUT_FBITS - 1, 0);
+            return out;
+        }
+        else
+        {
+            // OUT_FBITS > fbits: widen with zeros, no rounding needed
+        }
+
+        // If we get here, either OUT_FBITS==fbits or widening case:
+        // Bias exponent and pack using current mant
         const int max_bexp = (1 << out_ebits) - 1;
         int bexp_i = (int)((ap_int<out_ebits + 2>)e + (ap_int<out_ebits + 2>)fbias<out_ebits>::value);
         bexp_i = clamp_int(bexp_i, 0, max_bexp);
         ap_uint<out_ebits> bexp_u = (ap_uint<out_ebits>)bexp_i;
 
-        // Mantissa resize
-        ap_ufixed<OUT_FBITS + 1, 1> mout;
-        if (fbits > OUT_FBITS)
-        {
-            // keep OUT_FBITS fractional bits => pass OUT_FBITS-1
-            ap_ufixed<fbits + 1, 1> mr = round_to(m, OUT_FBITS - 1);
-            mout = (ap_ufixed<OUT_FBITS + 1, 1>)mr;
-        }
-        else
-        {
-            mout = (ap_ufixed<OUT_FBITS + 1, 1>)m;
-        }
-
-        // rounding overflow on mantissa
-        if (mout >= 2)
-        {
-            mout >>= 1;
-            int bi = bexp_i + 1;
-            if (bi > max_bexp) bi = max_bexp;
-            bexp_u = (ap_uint<out_ebits>)bi;
-        }
-
         ap_uint<out_nbits> out = 0;
         out[out_nbits - 1] = sign_;
         out(out_nbits - 2, out_nbits - 1 - out_ebits) = bexp_u;
-        if (OUT_FBITS > 0)
-            out(OUT_FBITS - 1, 0) = mout(OUT_FBITS - 1, 0); // drop hidden bit
+
+        if constexpr (OUT_FBITS > 0)
+        {
+            // take top OUT_FBITS fraction bits from our mant field
+            // mant hidden at fbits -> fraction MSB is mant[fbits-1]
+            ap_uint<OUT_FBITS> frac_field = 0;
+            constexpr int COPY = (OUT_FBITS < fbits) ? OUT_FBITS : fbits;
+        PACK_FRAC:
+            for (int i = 0; i < COPY; ++i)
+            {
+#pragma HLS UNROLL
+                frac_field[OUT_FBITS - 1 - i] = mant[fbits - 1 - i];
+            }
+            out(OUT_FBITS - 1, 0) = frac_field;
+        }
         return out;
     }
 
-    // -----------------------------------------
-    // Unary negate
-    // -----------------------------------------
+    // Unary minus
     FloatXUnpacked operator-() const
     {
 #pragma HLS INLINE
@@ -166,241 +247,132 @@ public:
         return r;
     }
 
-    // -----------------------------------------
-    // Add
-    // -----------------------------------------
+    // One-rounding-per-op: do internal math with EXTRA bits, then RNE once to fbits.
     FloatXUnpacked operator+(const FloatXUnpacked &rhs) const
     {
 #pragma HLS INLINE
-        // quick zeros
-        if (frac_ == 0) return rhs;
-        if (rhs.frac_ == 0) return *this;
+        if (frac_ == 0)
+            return rhs;
+        if (rhs.frac_ == 0)
+            return *this;
 
-        // Compare exponents
-        ap_int<ebits + 4> diff = (ap_int<ebits + 4>)(exp_ - rhs.exp_);
+        constexpr int G = 5; // more guard bits for safety
+        constexpr int MF = fbits + G;
 
-        // Use signed fixed for aligned mantissas
-        ap_fixed<fbits + 4, 4> a = (ap_fixed<fbits + 4, 4>)frac_;
-        ap_fixed<fbits + 4, 4> b = (ap_fixed<fbits + 4, 4>)rhs.frac_;
+        ap_int<ebits + 6> ea = exp_;
+        ap_int<ebits + 6> eb = rhs.exp_;
 
-        ap_int<ebits + 3> e;
-        bool s;
+        ap_uint<fbits + 1> ma0 = ufixed_to_mant_bits<fbits>(frac_);
+        ap_uint<fbits + 1> mb0 = ufixed_to_mant_bits<fbits>(rhs.frac_);
 
-        // align smaller mantissa to larger exponent (clamp shifts)
+        // expand mantissas with guard zeros at LSB
+        ap_uint<MF + 1> ma = ((ap_uint<MF + 1>)ma0) << G;
+        ap_uint<MF + 1> mb = ((ap_uint<MF + 1>)mb0) << G;
+
+        // align by exponent
+        ap_int<ebits + 7> diff = (ap_int<ebits + 7>)(ea - eb);
+
+        ap_int<ebits + 6> e = ea;
         if (diff >= 0)
         {
-            e = exp_;
-            s = sign_;
-
             int sh = (int)diff;
-            if (sh > (fbits + 4)) sh = (fbits + 4);
-            b = b >> sh;
-
-            if (sign_ != rhs.sign_) b = -b;
+            if (sh >= (MF + 1))
+                mb = 0;
+            else
+                mb >>= sh;
+            e = ea;
         }
         else
         {
-            e = rhs.exp_;
-            s = rhs.sign_;
-
             int sh = (int)(-diff);
-            if (sh > (fbits + 4)) sh = (fbits + 4);
-            a = a >> sh;
-
-            if (sign_ != rhs.sign_) a = -a;
+            if (sh >= (MF + 1))
+                ma = 0;
+            else
+                ma >>= sh;
+            e = eb;
         }
 
-        ap_fixed<fbits + 5, 5> sum = a + b;
+        // signed add in wider signed container
+        ap_int<MF + 3> sa = (ap_int<MF + 3>)ma;
+        ap_int<MF + 3> sb = (ap_int<MF + 3>)mb;
+        if (sign_)
+            sa = -sa;
+        if (rhs.sign_)
+            sb = -sb;
 
-        // If sum is negative, flip sign and take abs
-        if (sum < 0)
-        {
-            s = !s;
-            sum = -sum;
-        }
+        ap_int<MF + 4> sum = sa + sb;
 
+        FloatXUnpacked out;
         if (sum == 0)
         {
-            FloatXUnpacked out;
             out.sign_ = 0;
-            out.exp_  = 0;
+            out.exp_ = 0;
             out.frac_ = 0;
             return out;
         }
 
-        // Convert to unsigned mantissa domain
-        ap_ufixed<fbits + 2, 2> m = (ap_ufixed<fbits + 2, 2>)sum;
+        bool s = (sum < 0);
+        ap_uint<MF + 3> um = s ? (ap_uint<MF + 3>)(-sum) : (ap_uint<MF + 3>)sum;
 
-        // ---------------------------
-        // NORMALIZATION (FIXED)
-        // Count leading zeros on *m* itself (fbits+2 width),
-        // then shift-left by (lz - 1) when m < 1.
-        // ---------------------------
-        if (m >= 2)
+        // normalize so hidden bit ends at position MF (i.e., value in [1,2))
+        // hidden bit should be um[MF] == 1
+        if (um[MF + 1]) // >=2
         {
-            m >>= 1;
+            um >>= 1;
             e += 1;
         }
-        else if (m < 1)
+        else if (!um[MF]) // <1
         {
-            // mbits width is exactly fbits+2 => MSB index = fbits+1
-            ap_uint<fbits + 2> mbits = m.range(fbits + 1, 0);
-            int lz = (int)count_leading_symbol(mbits, 0);
-
-            int sh = lz - 1; // <-- key fix
-            if (sh < 0) sh = 0;
-            if (sh > (fbits + 1)) sh = (fbits + 1);
-
-            m <<= sh;
+            int lz = (int)count_leading_symbol(um, 0);
+            // um width is MF+3, MSB index MF+2, want first '1' at MF
+            int first_one = (MF + 2) - lz;
+            int sh = MF - first_one;
+            if (sh < 0)
+                sh = 0;
+            if (sh > (MF + 1))
+                sh = (MF + 1);
+            um <<= sh;
             e -= sh;
-
-            // safety: ensure in [1,2)
-            if (m < 1)
-            {
-                m <<= 1;
-                e -= 1;
-            }
         }
 
-        // Round to fbits precision (keep fbits fractional bits => pass fbits-1)
-        ap_ufixed<fbits + 2, 2> mr = round_to(m, fbits - 1);
-
-        // rounding overflow
-        if (mr >= 2)
-        {
-            mr >>= 1;
+        // Now round from MF fractional bits down to fbits fractional bits in one RNE step.
+        // Current mantissa bitfield width is (MF+1) (hidden at MF).
+        // We want output mantissa width (fbits+1) (hidden at fbits).
+        constexpr int EXTRA = MF - fbits;
+        ap_uint<1 + fbits + EXTRA> mwide = um.range(MF, EXTRA ? 0 : 0); // hidden at (fbits+EXTRA)
+        bool carry = false;
+        ap_uint<1 + fbits> mround = rne_round_mantissa<fbits, EXTRA>(mwide, carry);
+        if (carry)
             e += 1;
-        }
 
-        FloatXUnpacked out;
         out.sign_ = s;
-        out.exp_  = e;
-        out.frac_ = (ap_ufixed<fbits + 1, 1>)mr;
+        out.exp_ = e;
+        out.frac_ = mant_bits_to_ufixed<fbits>(mround);
         return out;
     }
 
     FloatXUnpacked operator-(const FloatXUnpacked &rhs) const
     {
 #pragma HLS INLINE
-        FloatXUnpacked neg = rhs;
-        neg.sign_ = !rhs.sign_;
-        return (*this) + neg;
-    }
-
-    FloatXUnpacked operator*(const FloatXUnpacked &rhs) const
-    {
-#pragma HLS INLINE
-        FloatXUnpacked out;
-
-        if (frac_ == 0 || rhs.frac_ == 0)
-            return out;
-
-        out.sign_ = sign_ ^ rhs.sign_;
-        out.exp_  = (ap_int<ebits + 3>)(exp_ + rhs.exp_);
-
-        ap_ufixed<2 * fbits + 2, 2> m = (ap_ufixed<2 * fbits + 2, 2>)(frac_ * rhs.frac_);
-
-        if (m >= 2)
-        {
-            m >>= 1;
-            out.exp_ += 1;
-        }
-
-        ap_ufixed<2 * fbits + 2, 2> mr = round_to(m, fbits - 1);
-
-        if (mr >= 2)
-        {
-            mr >>= 1;
-            out.exp_ += 1;
-        }
-
-        out.frac_ = (ap_ufixed<fbits + 1, 1>)mr;
-        return out;
-    }
-
-    FloatXUnpacked operator/(const FloatXUnpacked &rhs) const
-    {
-#pragma HLS INLINE
-        FloatXUnpacked out;
-
-        if (frac_ == 0)
-            return out;
-
-        if (rhs.frac_ == 0)
-        {
-            // simplified (no Inf/NaN)
-            return out;
-        }
-
-        out.sign_ = sign_ ^ rhs.sign_;
-        out.exp_  = (ap_int<ebits + 3>)(exp_ - rhs.exp_);
-
-        ap_ufixed<2 * fbits + 2, 2> m = (ap_ufixed<2 * fbits + 2, 2>)(frac_ / rhs.frac_);
-
-        if (m < 1)
-        {
-            m <<= 1;
-            out.exp_ -= 1;
-        }
-        else if (m >= 2)
-        {
-            m >>= 1;
-            out.exp_ += 1;
-        }
-
-        ap_ufixed<2 * fbits + 2, 2> mr = round_to(m, fbits - 1);
-
-        if (mr >= 2)
-        {
-            mr >>= 1;
-            out.exp_ += 1;
-        }
-        if (mr < 1)
-        {
-            mr <<= 1;
-            out.exp_ -= 1;
-        }
-
-        out.frac_ = (ap_ufixed<fbits + 1, 1>)mr;
-        return out;
+        FloatXUnpacked t = rhs;
+        t.sign_ = !t.sign_;
+        return (*this) + t;
     }
 };
 
 // ============================================================
-// Packed FloatX: custom (nbits, ebits) float-like container
+// Packed FloatX with FloatX + FloatX -> FloatX (matches your test)
 // ============================================================
 template <int nbits, int ebits>
 class FloatX
 {
 public:
-    static_assert(nbits >= 1 + ebits + 1, "FloatX: not enough bits");
     static constexpr int fbits = nbits - ebits - 1;
-
     using unpacked_t = FloatXUnpacked<ebits, fbits>;
 
     FloatX()
     {
-#pragma HLS INLINE
-        bits_ = 0;
-    }
-
-    FloatX(const FloatX &other)
-    {
-#pragma HLS INLINE
-        bits_ = other.bits_;
-    }
-
-    FloatX &operator=(const FloatX &other)
-    {
-#pragma HLS INLINE
-        bits_ = other.bits_;
-        return *this;
-    }
-
-    FloatX(const unpacked_t &u)
-    {
-#pragma HLS INLINE
-        bits_ = u.template encode<nbits, ebits>();
+#pragma HLS INLINE bits_ = 0;
     }
 
     FloatX(float c)
@@ -421,15 +393,6 @@ public:
         bits_ = u.template encode<nbits, ebits>();
     }
 
-    operator float() const
-    {
-#pragma HLS INLINE
-        FloatXUnpacked<8, 23> u;
-        u.template decode<nbits, ebits>(bits_);
-        ap_uint<32> b = u.template encode<32, 8>();
-        return bitcast_f32(b);
-    }
-
     operator double() const
     {
 #pragma HLS INLINE
@@ -439,53 +402,17 @@ public:
         return bitcast_f64(b);
     }
 
-    operator unpacked_t() const
+    // FloatX + FloatX -> FloatX (your test)
+    FloatX operator+(const FloatX &rhs) const
     {
 #pragma HLS INLINE
-        unpacked_t u;
-        u.template decode<nbits, ebits>(bits_);
-        return u;
-    }
-
-    // Packed -> unpacked ops
-    unpacked_t operator+(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        unpacked_t a;
+        unpacked_t a, b;
         a.template decode<nbits, ebits>(bits_);
-        return a + rhs;
-    }
-
-    unpacked_t operator-(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        unpacked_t a;
-        a.template decode<nbits, ebits>(bits_);
-        return a - rhs;
-    }
-
-    unpacked_t operator*(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        unpacked_t a;
-        a.template decode<nbits, ebits>(bits_);
-        return a * rhs;
-    }
-
-    unpacked_t operator/(const unpacked_t &rhs) const
-    {
-#pragma HLS INLINE
-        unpacked_t a;
-        a.template decode<nbits, ebits>(bits_);
-        return a / rhs;
-    }
-
-    unpacked_t operator-() const
-    {
-#pragma HLS INLINE
-        unpacked_t a;
-        a.template decode<nbits, ebits>(bits_);
-        return -a;
+        b.template decode<nbits, ebits>(rhs.bits_);
+        unpacked_t s = a + b;
+        FloatX out;
+        out.bits_ = s.template encode<nbits, ebits>();
+        return out;
     }
 
 private:
