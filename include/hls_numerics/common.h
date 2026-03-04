@@ -228,6 +228,93 @@ round_to_keep_fracbits(const ap_ufixed<W, I> &val, int frac_bit)
     return r;
 }
 
+// ============================================================
+// Round-to-nearest-even (banker's rounding) for ap_ufixed
+//
+// Contract (same as your current round_to_keep_fracbits):
+// - frac_bit is the fractional precision you want to keep,
+//   counted from 0 = 2^-1 (LSB fractional position).
+//   i.e. keep bits down to 2^-(frac_bit+1).
+//
+// Implementation details:
+// - Let keep = frac_bit + 1  (# fractional bits kept)
+// - guard bit is at index keep (first discarded bit)
+// - sticky is OR of all bits below guard: [0 .. keep-1 discarded?] actually below guard:
+//     sticky = OR(val[keep-1:0]) for discarded bits below guard? No:
+//     We discard bits [keep .. F-1]? Careful: indices are fractional bits, LSB=0.
+//     If we keep [0..keep-1], we discard [keep..F-1] (higher index => smaller value).
+//     So "guard" is val[keep] (first discarded), and "sticky" is OR of val[keep+1 .. F-1].
+// - round up if:
+//     guard == 1 AND (sticky == 1 OR lsb_kept == 1)
+//   This implements ties-to-even:
+//     - exactly half-way means guard=1 and sticky=0
+//     - in that case, round up only if kept LSB is 1 (to make result even).
+// ============================================================
+template <int W, int I>
+static inline ap_ufixed<W, I>
+round_to_keep_fracbits_rne(const ap_ufixed<W, I> &val, int frac_bit)
+{
+#pragma HLS INLINE
+
+    const int F = W - I; // # fractional bits
+
+    // No fractional bits -> nothing to do
+    if (F <= 0)
+        return val;
+
+    // keep = number of fractional bits we keep
+    int keep = frac_bit + 1;
+    if (keep < 0) keep = 0;
+    if (keep > F) keep = F;
+
+    // If we keep all fractional bits, nothing to do
+    if (keep == F)
+        return val;
+
+    // Guard is first discarded fractional bit
+    const int guard = keep; // valid because keep < F here
+
+    // LSB of kept field (the bit we test for ties-to-even)
+    const int lsb_kept = (keep == 0) ? 0 : (keep - 1);
+
+    const bool g = (val[guard] == 1);
+
+    // Sticky = OR of all bits below guard (i.e., more-significant index => smaller value),
+    // meaning indices guard+1 .. F-1
+    bool sticky = false;
+STICKY_LOOP:
+    for (int i = guard + 1; i < F; ++i)
+    {
+#pragma HLS UNROLL
+        sticky |= (val[i] == 1);
+    }
+
+    // Exactly-half-way case: g==1 && sticky==0.
+    // Round up only if LSB kept is 1 (to make the result even after increment).
+    bool lsb_is_1 = false;
+    if (keep > 0)
+        lsb_is_1 = (val[lsb_kept] == 1);
+
+    const bool round_up = g && (sticky || lsb_is_1);
+
+    ap_ufixed<W, I> r = val;
+
+    if (round_up)
+    {
+        ap_ufixed<W, I> inc = 0;
+
+        // If keep==0, we are rounding to an integer (no fractional kept).
+        // The integer LSB corresponds to bit index F (since fractional bits are [0..F-1]).
+        // Adding 1 at bit F increments by 1.0.
+        const int ulp_bit = (keep == 0) ? F : lsb_kept;
+        inc[ulp_bit] = 1;
+
+        r += inc;
+    }
+
+    return r;
+}
+
 // Backwards-compatible wrapper with your old name/signature:
 // - Here "frac_bit" means: keep bits down to 2^-(frac_bit+1)
 // If you were passing (fbits-1) etc, revisit call sites.
