@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Build options
 option(BUILD_TESTS "Build CPU tests using GoogleTest" ON)
-option(BUILD_HLS_TESTS "Build HLS/FPGA tests using Vitis" ON)
+option(BUILD_HLS_TESTS "Build HLS/FPGA tests using Vitis" OFF)
 option(BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 
 include(FetchContent)
@@ -19,6 +19,32 @@ include(FetchContent)
 # Find Eigen3
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 message(STATUS "Found Eigen3: ${Eigen3_DIR}")
+
+find_path(SUITESPARSE_INCLUDE_DIR
+    NAMES cholmod.h
+    PATHS /usr/include/suitesparse
+)
+
+find_library(CHOLMOD_LIB cholmod)
+find_library(AMD_LIB amd)
+find_library(COLAMD_LIB colamd)
+find_library(CAMD_LIB camd)
+find_library(CCOLAMD_LIB ccolamd)
+find_library(SUITESPARSECONFIG_LIB suitesparseconfig)
+
+set(SUITESPARSE_LIBS
+    ${CHOLMOD_LIB}
+    ${AMD_LIB}
+    ${COLAMD_LIB}
+    ${CAMD_LIB}
+    ${CCOLAMD_LIB}
+    ${SUITESPARSECONFIG_LIB}
+)
+
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+# LAPACKE is commonly separate:
+find_library(LAPACKE_LIB lapacke REQUIRED)
 
 # Create header-only library for unified linear algebra (CPU + FPGA compatible)
 add_library(linalg INTERFACE)
