@@ -26,6 +26,7 @@
 
 #include "linalg/linalg.h"
 #include "linalg/linalgx.h"
+#include "linalg/ldlt_solverx.h"
 #include "linalg/sparsemat_csc.h"
 #include "linalg/schurcomplement_solver.h" // <-- the class I provided: SchurSolverDepthPose + DenseCM
 
@@ -40,10 +41,6 @@ static double max_abs_diff(const Vecx<double> &a, const Vecx<double> &b)
         m = std::max(m, std::abs(a(i) - b(i)));
     return m;
 }
-
-// Dense column-major indexing
-static inline double &CM(std::vector<double> &A, int n, int r, int c) { return A[r + c * n]; }
-static inline double CMc(const std::vector<double> &A, int n, int r, int c) { return A[r + c * n]; }
 
 TEST(SchurComplementSolver, MatchesDenseReference)
 {
@@ -136,7 +133,7 @@ TEST(SchurComplementSolver, MatchesDenseReference)
     Hvv_values.finalize();
 
     // --- Solve with Schur complement solver ---
-    linalg::SchurSolverDepthPose schur;
+    SchurSolver schur;
     schur.set_pose_dim(n_pose);
 
     // Optional: a custom permutation for mesh-only factorization.
@@ -158,7 +155,7 @@ TEST(SchurComplementSolver, MatchesDenseReference)
         x_schur(n_mesh + i) = dp(i);
 
     // --- Dense reference solve on full system H x = g ---
-    Vecx<double> H_ref = H; // dposv overwrites A
+    Matx<double> H_ref = H; // dposv overwrites A
     Vecx<double> x_ref = g; // dposv overwrites RHS with solution
 
     int info = LAPACKE_dposv(LAPACK_COL_MAJOR, 'L',
@@ -186,4 +183,14 @@ TEST(SchurComplementSolver, MatchesDenseReference)
         res_inf = std::max(res_inf, std::abs(Hx(i) - g(i)));
 
     EXPECT_LT(res_inf, 1e-8);
+
+    // --- Dense reference solve on full system H x = g ---
+    LDLTx<double> ldlt_solver(n);
+
+    ldlt_solver.compute(H);
+    Vecx<double> x_ref_2 = ldlt_solver.solve(g);
+
+    // Compare solutions
+    const double err_2 = max_abs_diff(x_schur, x_ref_2);
+    EXPECT_LT(err_2, 1e-8);
 }

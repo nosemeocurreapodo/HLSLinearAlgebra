@@ -36,18 +36,18 @@ namespace linalg
     // - Schur: S = Hpp - Hpv * inv(Hvv) * Hvp
     // - Dense LAPACK (Cholesky) on S
     // -----------------------------
-    class SchurSolverDepthPose
+    class SchurSolver
     {
     public:
-        SchurSolverDepthPose() { cholmod_start(&cc_); }
-        ~SchurSolverDepthPose()
+        SchurSolver() { cholmod_start(&cc_); }
+        ~SchurSolver()
         {
             reset();
             cholmod_finish(&cc_);
         }
 
-        SchurSolverDepthPose(const SchurSolverDepthPose &) = delete;
-        SchurSolverDepthPose &operator=(const SchurSolverDepthPose &) = delete;
+        SchurSolver(const SchurSolver &) = delete;
+        SchurSolver &operator=(const SchurSolver &) = delete;
 
         void reset()
         {
@@ -224,7 +224,8 @@ namespace linalg
             // b = gp  - Hpv * y  = gp  - Hvp^T * y   (n_pose)
             // ------------------------------------------------------------
             // Start S = Hpp
-            S_ = Matx<double>(n_pose_, n_pose_);
+            // S_ = Matx<double>(n_pose_, n_pose_);
+            // S_.setZero();
             for (int j = 0; j < n_pose_; ++j)
                 for (int i = 0; i < n_pose_; ++i)
                     S_(i, j) = Hpp(i, j);
@@ -250,7 +251,8 @@ namespace linalg
             }
 
             // b = gp - Hvp^T * y
-            b_ = Vecx<double>(n_pose_);
+            // b_ = Vecx<double>(n_pose_);
+            // b_.setZero();
             for (int i = 0; i < n_pose_; ++i)
             {
                 double sum = 0.0;
@@ -278,7 +280,8 @@ namespace linalg
             // ------------------------------------------------------------
             // Step D: Recover dv = y - Z dp
             // ------------------------------------------------------------
-            dv_ = Vecx<double>::Zero(n_mesh_);
+            // dv_ = Vecx<double>::Zero(n_mesh_);
+            // dv_.setZero();
             for (int r = 0; r < n_mesh_; ++r)
             {
                 double zdp = 0.0;
@@ -325,6 +328,16 @@ namespace linalg
 
             if ((int)dv_.size() != n_mesh_)
                 // dv_.assign(n_mesh_, 0.0);
+                dv_ = Vecx<double>(n_mesh_);
+
+            if (S_.rows() != n_pose_ || S_.cols() != n_pose_)
+                S_ = Matx<double>(n_pose_, n_pose_);
+
+            if (b_.size() != n_pose_)
+                b_ = Vecx<double>(n_pose_);
+
+            if (dv_.size() != n_mesh_)
+                // dv_ = Vecx<double>::Zero(n_mesh_);
                 dv_ = Vecx<double>(n_mesh_);
         }
 

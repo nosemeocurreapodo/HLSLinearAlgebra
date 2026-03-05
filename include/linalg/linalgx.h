@@ -237,7 +237,7 @@ namespace linalg
         Type &operator()(int r, int c)
         {
             //  column major
-            //   int add = r * _cols + c;
+            //   int add = r * cols_ + c;
             //  row major
             int add = c * rows_ + r;
 
@@ -247,7 +247,7 @@ namespace linalg
         Type operator()(int r, int c) const
         {
             //  column major
-            //  int add = r * _cols + c;
+            //  int add = r * cols_ + c;
             //  row major
             int add = c * rows_ + r;
 

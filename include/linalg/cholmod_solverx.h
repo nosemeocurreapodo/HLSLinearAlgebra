@@ -78,7 +78,7 @@ namespace linalg
                 throw std::runtime_error("CHOLMOD: factorize failed (is A truly SPD?)");
         }
 
-        std::vector<double> solve(const std::vector<double> &b) const
+        Vecx<double> solve(const Vecx<double> &b) const
         {
             if (!factor_) throw std::runtime_error("CHOLESKY_CHOLMOD::solve: compute() not called");
             if ((int)b.size() != n_) throw std::invalid_argument("CHOLESKY_CHOLMOD::solve: wrong b size");
