@@ -1164,6 +1164,11 @@ namespace linalg
             return quaternion_;
         }
 
+        Quaternion<Type> &unit_quaternion()
+        {
+            return quaternion_;
+        }
+
         Mat3<Type> matrix() const
         {
             return quaternion_.matrix();
