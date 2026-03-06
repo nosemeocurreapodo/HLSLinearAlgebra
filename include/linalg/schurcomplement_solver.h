@@ -39,7 +39,13 @@ namespace linalg
     class SchurSolver
     {
     public:
-        SchurSolver() { cholmod_start(&cc_); }
+        SchurSolver()
+        {
+            cholmod_start(&cc_);
+            // cc_.supernodal = CHOLMOD_SUPERNODAL; // force supernodal
+            // cc_.final_ll = 1;                    // LL' factor (often beneficial)
+            // cc_.final_super = 1;                 // keep supernodal form
+        }
         ~SchurSolver()
         {
             reset();

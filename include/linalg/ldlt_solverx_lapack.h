@@ -25,7 +25,7 @@ namespace linalg
 
             // Factorization in-place
             // A = L*D*L^T with pivoting (Bunch–Kaufman)
-            lapack_int info = LAPACKE_ssytrf(LAPACK_COL_MAJOR, 'L',
+            lapack_int info = LAPACKE_dsytrf(LAPACK_COL_MAJOR, 'L',
                                              (lapack_int)n_, a_.data(), (lapack_int)n_,
                                              ipiv_.data());
             if (info < 0)
@@ -39,7 +39,7 @@ namespace linalg
             Vecx<Type> x = b; // LAPACK overwrites RHS with solution
 
             lapack_int nrhs = 1;
-            lapack_int info = LAPACKE_ssytrs(LAPACK_COL_MAJOR, 'L',
+            lapack_int info = LAPACKE_dsytrs(LAPACK_COL_MAJOR, 'L',
                                              (lapack_int)n_, nrhs,
                                              a_.data(), (lapack_int)n_,
                                              ipiv_.data(),
