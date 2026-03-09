@@ -44,6 +44,11 @@ target_link_libraries(ldlt_solverx_test
     gtest_main
     linalg
     Eigen3::Eigen
+    LAPACK::LAPACK 
+    ${BLAS_LIBRARIES}
+    ${LAPACK_LIBRARIES}
+    ${LAPACKE_LIB}
+    ${SUITESPARSE_LIBS}
 )
 gtest_discover_tests(ldlt_solverx_test
     TEST_PREFIX "CPU."

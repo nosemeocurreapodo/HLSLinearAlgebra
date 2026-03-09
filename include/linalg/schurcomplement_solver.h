@@ -77,14 +77,14 @@ namespace linalg
         // Optional permutation:
         //  - if nullptr: CHOLMOD chooses ordering
         //  - else: user_perm size n_mesh giving elimination order
-        void analyze_mesh_pattern(const SparseMatCSC &Hvv_pattern, const std::vector<int> *user_perm = nullptr)
+        void analyze_mesh_pattern(const SparseMatCSC<double> &Hvv_pattern, const std::vector<int> *user_perm = nullptr)
         {
             if (!Hvv_pattern.finalized())
                 throw std::runtime_error("analyze_mesh_pattern: Hvv_pattern must be finalized()");
-            if (Hvv_pattern.n() <= 0)
+            if (Hvv_pattern.cols() <= 0 || Hvv_pattern.rows() <= 0)
                 throw std::invalid_argument("analyze_mesh_pattern: n<=0");
 
-            n_mesh_ = Hvv_pattern.n();
+            n_mesh_ = Hvv_pattern.cols();
 
             if (factor_)
                 cholmod_free_factor(&factor_, &cc_);
@@ -127,13 +127,13 @@ namespace linalg
 
         // Factorize Hvv numeric for current iteration.
         // Hvv_values must have SAME pattern as analyzed Hvv_pattern (same Ap/Ai layout).
-        void factorize_mesh_numeric(const SparseMatCSC &Hvv_values)
+        void factorize_mesh_numeric(const SparseMatCSC<double> &Hvv_values)
         {
             if (!analyzed_)
                 throw std::runtime_error("factorize_mesh_numeric: call analyze_mesh_pattern() first");
             if (!Hvv_values.finalized())
                 throw std::runtime_error("factorize_mesh_numeric: Hvv_values must be finalized()");
-            if (Hvv_values.n() != n_mesh_)
+            if (Hvv_values.cols() != n_mesh_)
                 throw std::runtime_error("factorize_mesh_numeric: dimension mismatch");
             if (n_pose_ <= 0)
                 throw std::runtime_error("factorize_mesh_numeric: call set_pose_dim() first");
@@ -361,12 +361,12 @@ namespace linalg
             return D;
         }
 
-        cholmod_sparse make_cholmod_view_(const SparseMatCSC &A) const
+        cholmod_sparse make_cholmod_view_(const SparseMatCSC<double> &A) const
         {
             cholmod_sparse M;
             std::memset(&M, 0, sizeof(M));
-            M.nrow = A.n();
-            M.ncol = A.n();
+            M.nrow = A.rows();
+            M.ncol = A.cols();
             M.nzmax = A.nnz();
 
             // CHOLMOD wants non-const pointers; packed/sorted means it won't modify.

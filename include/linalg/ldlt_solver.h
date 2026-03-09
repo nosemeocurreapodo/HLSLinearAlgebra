@@ -26,18 +26,15 @@ namespace linalg
         VecN solve(const VecN &b)
         {
             // 1) Solve L y = b (Forward substitution)
-            VecN y;
-            forward_substitution(L_, b, y);
+            forward_substitution(L_, b, y_);
 
             // 3) Solve D z = y
-            VecN z;
-            diagonal_solve(D_, y, z);
+            diagonal_solve(D_, y_, z_);
 
             // 4) Solve L^T x = z
-            VecN x;
-            back_substitution_transpose(L_, z, x);
+            back_substitution_transpose(L_, z_, x_);
 
-            return x;
+            return x_;
         }
 
     private:
@@ -124,5 +121,9 @@ namespace linalg
         MatN A_;
         MatN L_;
         VecN D_; // Store diagonal of D as a vector
+
+        VecN y_;
+        VecN x_;
+        VecN z_;
     };
 }

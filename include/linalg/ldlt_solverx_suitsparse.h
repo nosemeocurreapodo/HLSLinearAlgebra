@@ -4,10 +4,11 @@
 #include <stdexcept>
 #include <type_traits>
 #include <string>
-#include <cstring>   // std::memcpy
+#include <cstring> // std::memcpy
 
 // SuiteSparse headers
-extern "C" {
+extern "C"
+{
 #include <amd.h>
 #include <ldl.h>
 }
@@ -49,7 +50,8 @@ namespace linalg
         // Reserve internal buffers (optional)
         void reserve(int n, int nnz_hint)
         {
-            if (n < 0) throw std::invalid_argument("LDLT_SUITSPARSE::reserve: n < 0");
+            if (n < 0)
+                throw std::invalid_argument("LDLT_SUITSPARSE::reserve: n < 0");
             n_ = n;
             computed_ = false;
 
@@ -91,14 +93,18 @@ namespace linalg
         // - Stores L (unit lower triangular, without diagonal) + D.
         void compute(const SparseCSCView<double> &A)
         {
-            if (A.n <= 0) throw std::invalid_argument("LDLT_SUITSPARSE::compute: A.n <= 0");
-            if (!A.Ap || !A.Ai || !A.Ax) throw std::invalid_argument("LDLT_SUITSPARSE::compute: null CSC pointers");
-            if (A.n != n_) reserve(A.n, A.Ap[A.n]); // adopt size
+            if (A.n <= 0)
+                throw std::invalid_argument("LDLT_SUITSPARSE::compute: A.n <= 0");
+            if (!A.Ap || !A.Ai || !A.Ax)
+                throw std::invalid_argument("LDLT_SUITSPARSE::compute: null CSC pointers");
+            if (A.n != n_)
+                reserve(A.n, A.Ap[A.n]); // adopt size
 
             const int n = n_;
             const int nnz = A.Ap[n];
 
-            if (nnz < 0) throw std::invalid_argument("LDLT_SUITSPARSE::compute: nnz < 0");
+            if (nnz < 0)
+                throw std::invalid_argument("LDLT_SUITSPARSE::compute: nnz < 0");
 
             // 1) AMD ordering: P such that A(P,P) reduces fill
             // AMD wants CSC pattern (Ap, Ai). Values ignored.
@@ -113,7 +119,8 @@ namespace linalg
                     throw std::runtime_error("LDLT_SUITSPARSE: amd_order failed, status=" + std::to_string(status));
                 }
                 // Build inverse permutation
-                for (int k = 0; k < n; ++k) Pinv_[P_[k]] = k;
+                for (int k = 0; k < n; ++k)
+                    Pinv_[P_[k]] = k;
             }
 
             // 2) Symbolic factorization: determine L structure
@@ -176,8 +183,10 @@ namespace linalg
         // Solve Ax = b using stored LDL^T of PAP^T
         std::vector<double> solve(const std::vector<double> &b) const
         {
-            if (!computed_) throw std::runtime_error("LDLT_SUITSPARSE::solve: compute() not called");
-            if ((int)b.size() != n_) throw std::invalid_argument("LDLT_SUITSPARSE::solve: b has wrong size");
+            if (!computed_)
+                throw std::runtime_error("LDLT_SUITSPARSE::solve: compute() not called");
+            if ((int)b.size() != n_)
+                throw std::invalid_argument("LDLT_SUITSPARSE::solve: b has wrong size");
 
             const int n = n_;
 
@@ -198,12 +207,12 @@ namespace linalg
         }
 
         // Optional: expose permutation/factors if you want them
-        const std::vector<int>& P() const { return P_; }
-        const std::vector<int>& Pinv() const { return Pinv_; }
-        const std::vector<int>& Lp() const { return Lp_; }
-        const std::vector<int>& Li() const { return Li_; }
-        const std::vector<double>& Lx() const { return Lx_; }
-        const std::vector<double>& D() const { return D_; }
+        const std::vector<int> &P() const { return P_; }
+        const std::vector<int> &Pinv() const { return Pinv_; }
+        const std::vector<int> &Lp() const { return Lp_; }
+        const std::vector<int> &Li() const { return Li_; }
+        const std::vector<double> &Lx() const { return Lx_; }
+        const std::vector<double> &D() const { return D_; }
 
     private:
         int n_ = 0;

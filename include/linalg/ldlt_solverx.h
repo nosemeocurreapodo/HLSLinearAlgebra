@@ -2,19 +2,37 @@
 
 #include "linalg/linalgx.h"
 
+#ifdef USE_VITIS
+// #define HLS_PRAGMA(x) _Pragma(#x)
+// #define HLS_INLINE HLS_PRAGMA(HLS INLINE)
+// #define HLS_UNROLL HLS_PRAGMA(HLS UNROLL)
+// #define HLS_PIPELINE HLS_PRAGMA(HLS PIPELINE)
+// #define HLS_ARRAY_PARTITION(var, type, dim) HLS_PRAGMA(HLS ARRAY_PARTITION variable = var type = type dim = dim)
+#include "hls_math.h"
+namespace math = hls;
+#else
+// #define HLS_PRAGMA(x)
+// #define HLS_INLINE
+// #define HLS_UNROLL
+// #define HLS_PIPELINE
+// #define HLS_ARRAY_PARTITION(var, type, dim)
+#include <cmath>
+namespace math = std;
+#endif
+
 namespace linalg
 {
     template <typename Type>
     class LDLTx
     {
     public:
-        LDLTx()
-            : LDLTx(0)
-        {
-        }
-        
+        // LDLTx()
+        //     : LDLTx(0)
+        //{
+        // }
+
         LDLTx(int size)
-            : size_(size), A_(size, size), L_(size, size), D_(size), invD_(size)
+            : size_(size), A_(size, size), L_(size, size), D_(size), invD_(size), y_(size), x_(size), z_(size)
         {
         }
 
@@ -31,18 +49,15 @@ namespace linalg
         Vecx<Type> solve(const Vecx<Type> &b)
         {
             // 1) Solve L y = b (Forward substitution)
-            Vecx<Type> y(size_);
-            forward_substitution(L_, b, y);
+            forward_substitution(L_, b, y_);
 
             // 3) Solve D z = y
-            Vecx<Type> z(size_);
-            diagonal_solve(D_, y, z);
+            diagonal_solve(D_, y_, z_);
 
             // 4) Solve L^T x = z
-            Vecx<Type> x(size_);
-            back_substitution_transpose(L_, z, x);
+            back_substitution_transpose(L_, z_, x_);
 
-            return x;
+            return x_;
         }
 
         /*
@@ -161,6 +176,11 @@ namespace linalg
         Matx<Type> L_;
         Vecx<Type> D_;    // Store diagonal of D as a vector
         Vecx<Type> invD_; // Store inverse of diagonal of D as a vector
+
+        Vecx<Type> y_;
+        Vecx<Type> x_;
+        Vecx<Type> z_;
+
         int size_;
     };
 }
