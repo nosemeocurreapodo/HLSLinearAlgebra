@@ -74,13 +74,13 @@ namespace linalg
     {
     public:
         // LDLT_LAPACK() : LDLT_LAPACK(0) {}
-        explicit LDLT_LAPACK(int n) : n_(n), a_(n, n), ipiv_(n)
+        explicit LDLT_LAPACK(int n) : n_(n), ipiv_(n)
         {
             check_supported_type<Type>();
         }
 
         // Factorize A (symmetric). Only one triangle is referenced; we use lower ('L').
-        void compute(const Matx<Type> &A)
+        void compute(Matx<Type> &A)
         {
             // Pack Matx -> column-major buffer a_
             // a_(r,c) in col-major is a_[r + c*n_]
@@ -88,10 +88,10 @@ namespace linalg
             //    for (int c = 0; c < n_; ++c)
             //        a_[r + c * n_] = A(r, c);
 
-            a_ = A;
+            a_ = &A;
             // Factorization in-place
             // A = L*D*L^T with pivoting (Bunch–Kaufman)
-            lapack_int info = LapackLDLT<Type>::sytrf(n_, a_.data(), n_, ipiv_.data());
+            lapack_int info = LapackLDLT<Type>::sytrf(n_, A.data(), n_, ipiv_.data());
             if (info < 0)
                 throw std::runtime_error("LAPACKE_dsytrf: illegal argument at position " + std::to_string(-info));
             if (info > 0)
@@ -103,7 +103,7 @@ namespace linalg
             Vecx<Type> x = b; // LAPACK overwrites RHS with solution
 
             lapack_int info = LapackLDLT<Type>::sytrs(n_, 1,
-                                                      a_.data(), n_,
+                                                      a_->data(), n_,
                                                       ipiv_.data(),
                                                       x.data(), n_);
             if (info < 0)
@@ -116,7 +116,7 @@ namespace linalg
         int n_;
         // std::vector<Type> a_;          // factorized matrix (in-place)
         // std::vector<lapack_int> ipiv_; // pivots from SYTRF
-        Matx<Type> a_;
+        Matx<Type>* a_;
         Vecx<lapack_int> ipiv_;
     };
 

@@ -9,6 +9,7 @@
 #include "linalg/linalgx.h"
 #include "linalg/ldlt_solverx.h" // if needed, depending on your structure
 #include "linalg/ldlt_solverx_lapack.h"
+#include "linalg/dense_cholmod_solverx.h"
 #include "common.h"
 
 constexpr double kTol = 1e-8;
@@ -60,6 +61,9 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
         LDLT_LAPACK<double> ldlt_lapack(size);
         ldlt_lapack.compute(A_linalg);
 
+        DENSE_CHOLESKY_CHOLMOD<double> cholesky_lapack(size);
+        cholesky_lapack.compute(A_linalg);
+
         // Factorization with Eigen's LDLT
         Eigen::LDLT<Eigen::MatrixX<double>> ldlt_eig(A_eig);
 
@@ -89,6 +93,8 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
             Vecx<double> x_linalg = ldlt_linalg.solve(b_linalg);
 
             Vecx<double> x_lapack = ldlt_lapack.solve(b_linalg);
+
+            Vecx<double> x_cholesky = cholesky_lapack.solve(b_linalg);
 
             // Solve with Eigen's LDLT
             Eigen::VectorX<double> x_eig = ldlt_eig.solve(b_eig);
@@ -140,7 +146,7 @@ TEST(LDLTx_solver, TimingComparison)
     SPDSystem S = make_system(w_mesh, h_mesh, s_pose, dof_pose, lambda, /*seed=*/99);
 
     Eigen::MatrixX<T> Hd_eigen(n, n);
-    Eigen::SparseMatrix<T> Hs_eigen  = from_dense_to_sparse<Matx<T>, Eigen::SparseMatrix<T>>(S.H);
+    Eigen::SparseMatrix<T> Hs_eigen = from_dense_to_sparse<Matx<T>, Eigen::SparseMatrix<T>>(S.H);
 
     Eigen::VectorX<T> g_eigen(n);
 
@@ -155,8 +161,12 @@ TEST(LDLTx_solver, TimingComparison)
 
     LDLTx<T> ldlt_linalg(n);
     LDLT_LAPACK<T> ldlt_lapack(n);
+    DENSE_CHOLESKY_CHOLMOD<T> cholesky_lapack(n);
     Eigen::LDLT<Eigen::MatrixX<T>> ldlt_eig(n);
     Eigen::LLT<Eigen::MatrixX<T>> llt_eig(n);
+    Eigen::SimplicialLDLT<Eigen::SparseMatrix<T>> ldlt_sparse_eig;
+
+    ldlt_sparse_eig.analyzePattern(Hs_eigen);
 
     auto ldlt_linalg_iter = [&]()
     {
@@ -170,6 +180,14 @@ TEST(LDLTx_solver, TimingComparison)
     {
         ldlt_lapack.compute(S.H);
         Vecx<T> x_ref = ldlt_lapack.solve(S.g);
+        volatile T sink = x_ref(0);
+        (void)sink;
+    };
+
+    auto cholesky_lapack_iter = [&]()
+    {
+        cholesky_lapack.compute(S.H);
+        Vecx<T> x_ref = cholesky_lapack.solve(S.g);
         volatile T sink = x_ref(0);
         (void)sink;
     };
@@ -190,17 +208,30 @@ TEST(LDLTx_solver, TimingComparison)
         (void)sink;
     };
 
+    auto ldlt_sparse_eigen_iter = [&]()
+    {
+        ldlt_sparse_eig.factorize(Hs_eigen);
+        Eigen::VectorX<T> x_ref = ldlt_sparse_eig.solve(g_eigen);
+        volatile T sink = x_ref(0);
+        (void)sink;
+    };
+
     // Use small iters; dense is expensive
     Timing t_linalg = time_it(ldlt_linalg_iter, /*iters=*/10, /*warmup=*/1);
     Timing t_lapack = time_it(ldlt_lapack_iter, /*iters=*/10, /*warmup=*/1);
+    Timing t_clapack = time_it(cholesky_lapack_iter, /*iters=*/10, /*warmup=*/1);
+
     Timing t_eigen = time_it(ldlt_eigen_iter, /*iters=*/10, /*warmup=*/1);
     Timing t_eigen2 = time_it(llt_eigen_iter, /*iters=*/10, /*warmup=*/1);
+    Timing t_eigen3 = time_it(ldlt_sparse_eigen_iter, /*iters=*/10, /*warmup=*/1);
 
     std::cout << "[Timing] Medium compare (n=" << n << "): "
               << "Linalg avg=" << t_linalg.ms << " ms, "
               << "Lapack avg=" << t_lapack.ms << " ms, "
+              << "cLapack avg=" << t_clapack.ms << " ms, "
               << "Eigen avg=" << t_eigen.ms << " ms, "
-              << "Eigen avg=" << t_eigen2.ms << " ms\n";
+              << "Eigen avg=" << t_eigen2.ms << " ms "
+              << "Eigen avg=" << t_eigen3.ms << " ms\n";
 
     // Gentle check: Schur should not be dramatically slower than dense here.
     // (Don’t make this too strict; CI machines vary a lot.)
