@@ -9,15 +9,15 @@ namespace linalg
     {
     public:
         using MatN = Mat<Type, size, size>;
-        using VecN = Vec<Type, size>;
+        using VecN = Mat<Type, size, 1>;
 
         LDLT() {}
 
         // Compute the LDLT decomposition of a matrix A.
         // This must be called before solve().
-        void compute(const MatN &_A)
+        void compute(const MatN &A)
         {
-            A_ = _A;
+            A_ = A;
             ldlt_decompose();
         }
 
@@ -41,8 +41,8 @@ namespace linalg
         void ldlt_decompose()
         {
             // Initialize L to identity and D to zero.
-            L_ = MatN::Identity();
-            D_ = VecN::Zero();
+            L_.setIdentity();
+            D_.setZero();
 
             for (int i = 0; i < size; ++i)
             {
@@ -50,25 +50,25 @@ namespace linalg
                 Type sum = A_(i, i);
                 for (int k = 0; k < i; ++k)
                 {
-                    sum -= L_(i, k) * L_(i, k) * D_(k);
+                    sum -= L_(i, k) * L_(i, k) * D_(k, 0);
                 }
-                D_(i) = sum;
+                D_(i, 0) = sum;
 
-                if (math::fabs(D_(i)) < Type(1e-12))
+                if (math::fabs(D_(i, 0)) < Type(1e-12))
                 {
                     // Matrix is not positive definite or is singular.
                     // A robust implementation would throw or return an error.
                 }
 
                 // 2) Compute L[j][i] for j = i+1..n-1
-                Type inv_Di = Type(1) / D_(i);
+                Type inv_Di = Type(1) / D_(i, 0);
                 for (int j = i + 1; j < size; ++j)
                 {
                     Type val = A_(j, i);
                     // Subtract the part contributed by previous columns
                     for (int k = 0; k < i; ++k)
                     {
-                        val -= L_(j, k) * L_(i, k) * D_(k);
+                        val -= L_(j, k) * L_(i, k) * D_(k, 0);
                     }
                     // L[j][i] = (A[j][i] - ...) / D[i]
                     L_(j, i) = val * inv_Di;
@@ -82,13 +82,13 @@ namespace linalg
         {
             for (int i = 0; i < size; ++i)
             {
-                Type sum = b(i);
+                Type sum = b(i, 0);
                 for (int j = 0; j < i; ++j)
                 {
-                    sum -= L(i, j) * y(j);
+                    sum -= L(i, j) * y(j, 0);
                 }
                 // L(i, i) is 1.0
-                y(i) = sum;
+                y(i, 0) = sum;
             }
         }
 
@@ -98,7 +98,7 @@ namespace linalg
         {
             for (int i = 0; i < size; ++i)
             {
-                z(i) = y(i) / D(i);
+                z(i, 0) = y(i, 0) / D(i, 0);
             }
         }
 
@@ -108,13 +108,13 @@ namespace linalg
         {
             for (int i = size - 1; i >= 0; --i)
             {
-                Type sum = z(i);
+                Type sum = z(i, 0);
                 for (int j = i + 1; j < size; ++j)
                 {
-                    sum -= L(j, i) * x(j); // L^T[i][j] = L[j][i]
+                    sum -= L(j, i) * x(j, 0); // L^T[i][j] = L[j][i]
                 }
                 // L[i][i] = 1.0
-                x(i) = sum;
+                x(i, 0) = sum;
             }
         }
 

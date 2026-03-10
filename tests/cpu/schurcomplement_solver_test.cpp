@@ -88,7 +88,7 @@ TEST(SchurComplementSolver, FullPatternMatchesDenseReference_Small)
     EXPECT_LT(inf_norm_residual(S.H, x_schur, S.g), 1e-8);
 
     // Optional secondary reference via your LDLT
-    LDLTx<double> ldlt_solver(n);
+    LDLTx<Matx<double>> ldlt_solver(n);
     ldlt_solver.compute(S.H);
     Vecx<double> x_ref2 = ldlt_solver.solve(S.g);
     EXPECT_LT(max_abs_diff(x_schur, x_ref2), 1e-8);

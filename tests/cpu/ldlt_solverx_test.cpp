@@ -6,7 +6,9 @@
 #include <random>
 
 // Adjust this to the actual path of your linalg headers
+#include "linalg/linalg.h"
 #include "linalg/linalgx.h"
+#include "linalg/ldlt_solver.h"
 #include "linalg/ldlt_solverx.h" // if needed, depending on your structure
 #include "linalg/ldlt_solverx_lapack.h"
 #include "linalg/dense_cholmod_solverx.h"
@@ -17,7 +19,8 @@ constexpr double kTol = 1e-8;
 using namespace linalg;
 
 // Generic helper to run a bunch of random SPD systems for size N
-void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_system = 3)
+template <int size>
+void TestLDLTxSolverRandomSPD(int num_systems = 5, int num_rhs_per_system = 3)
 {
     // using MatN    = linalg::Matx<double, N, N>;
     // using VecN    = linalg::Vec<double, N>;
@@ -45,17 +48,22 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
         A_eig += 0.5 * Eigen::MatrixX<double>::Identity(size, size); // strengthen positive-definiteness
 
         // Copy to your linalg::MatN
+        Mat<double, size, size> Ac_linalg;
         Matx<double> A_linalg(size, size);
         for (int i = 0; i < size; ++i)
         {
             for (int j = 0; j < size; ++j)
             {
                 A_linalg(i, j) = A_eig(i, j);
+                Ac_linalg(i, j) = A_eig(i, j);
             }
         }
 
+        LDLT<double, size> ldltc_linalg;
+        ldltc_linalg.compute(Ac_linalg);
+
         // Factorization with your LDLT
-        LDLTx<double> ldlt_linalg(size);
+        LDLTx<Matx<double>> ldlt_linalg(size);
         ldlt_linalg.compute(A_linalg);
 
         LDLT_LAPACK<double> ldlt_lapack(size);
@@ -83,13 +91,17 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
             }
 
             // Copy b to your VecN
+            Vec<double, size> bc_linalg;
             Vecx<double> b_linalg(size);
             for (int i = 0; i < size; ++i)
             {
                 b_linalg(i) = b_eig(i);
+                bc_linalg(i) = b_eig(i);
             }
 
             // Solve with your solver
+            Vec<double, size> xc_linalg = ldltc_linalg.solve(bc_linalg);
+
             Vecx<double> x_linalg = ldlt_linalg.solve(b_linalg);
 
             Vecx<double> x_lapack = ldlt_lapack.solve(b_linalg);
@@ -110,7 +122,25 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
                     << ", rhs " << rhs
                     << ", index " << i;
 
-                EXPECT_NEAR(x_lapack(i), x_linalg(i), kTol)
+                EXPECT_NEAR(x_eig(i), xc_linalg(i), kTol)
+                    << "Eigen Mismatch at size N=" << size
+                    << ", system " << sys
+                    << ", rhs " << rhs
+                    << ", index " << i;
+
+                EXPECT_NEAR(x_eig(i), x_lapack(i), kTol)
+                    << "Lapack Mismatch at size N=" << size
+                    << ", system " << sys
+                    << ", rhs " << rhs
+                    << ", index " << i;
+
+                // EXPECT_NEAR(x_eig(i), x_cholesky(i), kTol)
+                //     << "Lapack Mismatch at size N=" << size
+                //     << ", system " << sys
+                //     << ", rhs " << rhs
+                //     << ", index " << i;
+
+                EXPECT_NEAR(x_eig(i), x_eig2(i), kTol)
                     << "Lapack Mismatch at size N=" << size
                     << ", system " << sys
                     << ", rhs " << rhs
@@ -125,17 +155,17 @@ void TestLDLTxSolverRandomSPD(int size, int num_systems = 5, int num_rhs_per_sys
 TEST(LDLTx_solver, RandomSPD_32x32)
 {
     // A bit larger to make sure things still behave.
-    TestLDLTxSolverRandomSPD(16 * 16);
+    TestLDLTxSolverRandomSPD<16 * 16>();
 }
 
 TEST(LDLTx_solver, TimingComparison)
 {
     using T = float;
 
-    const int w_mesh = 32;
-    const int h_mesh = 32;
+    const int w_mesh = 16;
+    const int h_mesh = 16;
     const int n_mesh = w_mesh * h_mesh;
-    const int s_pose = 6;
+    const int s_pose = 3;
     const int dof_pose = 6;
     const int n_pose = s_pose * dof_pose;
     const int n = n_mesh + n_pose;
@@ -147,19 +177,24 @@ TEST(LDLTx_solver, TimingComparison)
 
     Eigen::MatrixX<T> Hd_eigen(n, n);
     Eigen::SparseMatrix<T> Hs_eigen = from_dense_to_sparse<Matx<T>, Eigen::SparseMatrix<T>>(S.H);
-
     Eigen::VectorX<T> g_eigen(n);
+
+    Mat<T, n, n> Hc_linalg;
+    Mat<T, n, 1> gc_linalg;
 
     for (int i = 0; i < n; i++)
     {
         g_eigen(i) = S.g(i);
+        gc_linalg(i, 0) = S.g(i);
         for (int j = 0; j < n; j++)
         {
             Hd_eigen(i, j) = S.H(i, j);
+            Hc_linalg(i, j) = S.H(i, j);
         }
     }
 
-    LDLTx<T> ldlt_linalg(n);
+    LDLT<T, n> ldltc_linalg;
+    LDLTx<Matx<T>> ldlt_linalg(n);
     LDLT_LAPACK<T> ldlt_lapack(n);
     DENSE_CHOLESKY_CHOLMOD<T> cholesky_lapack(n);
     Eigen::LDLT<Eigen::MatrixX<T>> ldlt_eig(n);
@@ -167,6 +202,14 @@ TEST(LDLTx_solver, TimingComparison)
     Eigen::SimplicialLDLT<Eigen::SparseMatrix<T>> ldlt_sparse_eig;
 
     ldlt_sparse_eig.analyzePattern(Hs_eigen);
+
+    auto ldltc_linalg_iter = [&]()
+    {
+        ldltc_linalg.compute(Hc_linalg);
+        Mat<T, n, 1> x_ref = ldltc_linalg.solve(gc_linalg);
+        volatile T sink = x_ref(0, 0);
+        (void)sink;
+    };
 
     auto ldlt_linalg_iter = [&]()
     {
@@ -218,6 +261,8 @@ TEST(LDLTx_solver, TimingComparison)
 
     // Use small iters; dense is expensive
     Timing t_linalg = time_it(ldlt_linalg_iter, /*iters=*/10, /*warmup=*/1);
+    Timing t_linalgc = time_it(ldltc_linalg_iter, /*iters=*/10, /*warmup=*/1);
+
     Timing t_lapack = time_it(ldlt_lapack_iter, /*iters=*/10, /*warmup=*/1);
     Timing t_clapack = time_it(cholesky_lapack_iter, /*iters=*/10, /*warmup=*/1);
 
@@ -227,6 +272,7 @@ TEST(LDLTx_solver, TimingComparison)
 
     std::cout << "[Timing] Medium compare (n=" << n << "): "
               << "Linalg avg=" << t_linalg.ms << " ms, "
+              << "Linalgc avg=" << t_linalgc.ms << " ms, "
               << "Lapack avg=" << t_lapack.ms << " ms, "
               << "cLapack avg=" << t_clapack.ms << " ms, "
               << "Eigen avg=" << t_eigen.ms << " ms, "

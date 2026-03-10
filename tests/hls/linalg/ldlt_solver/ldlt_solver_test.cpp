@@ -2,7 +2,9 @@
 #include <cmath>
 #include <iomanip>
 #include <random>
+//#include <Eigen/Core>
 #include "linalg/linalg.h"
+#include "linalg/ldlt_solver.h"
 
 // Declare the HLS top-level function
 extern "C" void top(
@@ -37,8 +39,8 @@ int main()
     std::normal_distribution<double> dist(0.0, 1.0);
 
     // Build a random SPD matrix
-    linalg::Mat<double, N, N> A_linalg;
-    Eigen::Matrix<double, N, N> M;
+    //Eigen::Matrix<double, N, N> M;
+    linalg::Mat<double, N, N> M;
     for (int i = 0; i < N; ++i)
     {
         for (int j = 0; j < N; ++j)
@@ -46,18 +48,21 @@ int main()
             M(i, j) = dist(gen);
         }
     }
-    Eigen::Matrix<double, N, N> A_eig = M.transpose() * M + 0.5 * Eigen::Matrix<double, N, N>::Identity();
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j)
-            A_linalg(i, j) = A_eig(i, j);
+
+    linalg::Mat<double, N, N> A_linalg = M.transpose() * M + 0.5 * linalg::Mat<double, N, N>::Identity();
+    //linalg::Mat<double, N, N> A_linalg;
+
+    //for (int i = 0; i < N; ++i)
+    //    for (int j = 0; j < N; ++j)
+    //        A_linalg(i, j) = A_eig(i, j);
 
     // Random RHS
-    Eigen::Matrix<double, N, 1> b_eig;
+    //Eigen::Matrix<double, N, 1> b_eig;
     linalg::Vec<double, N> b_linalg;
     for (int i = 0; i < N; ++i)
     {
-        b_eig(i) = dist(gen);
-        b_linalg(i) = b_eig(i);
+        b_linalg(i) = dist(gen);
+        //b_linalg(i) = b_eig(i);
     }
 
     // Call HLS top (inlined interface uses lots of scalar args)

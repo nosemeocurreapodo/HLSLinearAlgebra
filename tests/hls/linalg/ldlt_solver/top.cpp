@@ -1,6 +1,7 @@
 #include "linalg/linalg.h"
-#include "hls_numerics/FloatX.h"
-#include "hls_numerics/Posit.h"
+#include "linalg/ldlt_solver.h"
+// #include "hls_numerics/FloatX.h"
+// #include "hls_numerics/Posit.h"
 
 // Top-level HLS function for LDLT solver (fixed N=6)
 extern "C" void top(
@@ -71,15 +72,50 @@ extern "C" void top(
     linalg::Mat6<float> A;
 
     // Fill matrix (row-major order)
-    A(0,0) = in_0;  A(0,1) = in_1;  A(0,2) = in_2;  A(0,3) = in_3;  A(0,4) = in_4;  A(0,5) = in_5;
-    A(1,0) = in_6;  A(1,1) = in_7;  A(1,2) = in_8;  A(1,3) = in_9;  A(1,4) = in_10; A(1,5) = in_11;
-    A(2,0) = in_12; A(2,1) = in_13; A(2,2) = in_14; A(2,3) = in_15; A(2,4) = in_16; A(2,5) = in_17;
-    A(3,0) = in_18; A(3,1) = in_19; A(3,2) = in_20; A(3,3) = in_21; A(3,4) = in_22; A(3,5) = in_23;
-    A(4,0) = in_24; A(4,1) = in_25; A(4,2) = in_26; A(4,3) = in_27; A(4,4) = in_28; A(4,5) = in_29;
-    A(5,0) = in_30; A(5,1) = in_31; A(5,2) = in_32; A(5,3) = in_33; A(5,4) = in_34; A(5,5) = in_35;
+    A(0, 0) = in_0;
+    A(0, 1) = in_1;
+    A(0, 2) = in_2;
+    A(0, 3) = in_3;
+    A(0, 4) = in_4;
+    A(0, 5) = in_5;
+    A(1, 0) = in_6;
+    A(1, 1) = in_7;
+    A(1, 2) = in_8;
+    A(1, 3) = in_9;
+    A(1, 4) = in_10;
+    A(1, 5) = in_11;
+    A(2, 0) = in_12;
+    A(2, 1) = in_13;
+    A(2, 2) = in_14;
+    A(2, 3) = in_15;
+    A(2, 4) = in_16;
+    A(2, 5) = in_17;
+    A(3, 0) = in_18;
+    A(3, 1) = in_19;
+    A(3, 2) = in_20;
+    A(3, 3) = in_21;
+    A(3, 4) = in_22;
+    A(3, 5) = in_23;
+    A(4, 0) = in_24;
+    A(4, 1) = in_25;
+    A(4, 2) = in_26;
+    A(4, 3) = in_27;
+    A(4, 4) = in_28;
+    A(4, 5) = in_29;
+    A(5, 0) = in_30;
+    A(5, 1) = in_31;
+    A(5, 2) = in_32;
+    A(5, 3) = in_33;
+    A(5, 4) = in_34;
+    A(5, 5) = in_35;
 
     linalg::Vec6<float> b;
-    b(0) = (float)b0; b(1) = (float)b1; b(2) = (float)b2; b(3) = (float)b3; b(4) = (float)b4; b(5) = (float)b5;
+    b(0) = (float)b0;
+    b(1) = (float)b1;
+    b(2) = (float)b2;
+    b(3) = (float)b3;
+    b(4) = (float)b4;
+    b(5) = (float)b5;
 
     // Compute LDLT and solve
     linalg::LDLT<float, 6> solver;
