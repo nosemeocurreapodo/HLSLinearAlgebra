@@ -74,15 +74,15 @@ namespace linalg
             H_ref_ = A;
         }
 
-        Vecx<Type> solve(const Vecx<Type> &b)
+        Vecx<Type> solve(Vecx<Type> &b)
         {
             Vecx<Type> x = b; // LAPACK overwrites RHS with solution
-            // x_ref_ = b; // overwritten
+            //  x_ref_ = b; // overwritten
             int info = LapackCholmod<Type>::posv(size_, 1,
                                                  H_ref_.data(), size_,
                                                  x.data(), size_);
 
-            return x_ref_;
+            return x;
         }
 
     private:

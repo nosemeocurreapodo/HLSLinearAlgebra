@@ -32,7 +32,7 @@ namespace linalg
         // }
 
         LDLTx(int size)
-            : size_(size), A_(size, size), L_(size, size), D_(size, 1), invD_(size, 1), y_(size, 1), x_(size, 1), z_(size, 1)
+            : size_(size)
         {
         }
 
@@ -46,7 +46,7 @@ namespace linalg
 
         // Solve A x = b for x, given b.
         // Assumes compute() has been called.
-        Mat solve(const Mat &b)
+        Mat &solve(const Mat &b)
         {
             // 1) Solve L y = b (Forward substitution)
             forward_substitution(L_, b, y_);

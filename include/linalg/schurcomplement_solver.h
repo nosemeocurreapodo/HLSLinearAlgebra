@@ -307,6 +307,7 @@ namespace linalg
             if (n_mesh_ <= 0 || n_pose_ <= 0)
                 return;
 
+            /*
             const int rhs_cols = 1 + n_pose_;
             if (B_.rows() != n_mesh_ || B_.cols() != rhs_cols)
                 // B_.resize(n_mesh_, rhs_cols);
@@ -345,6 +346,7 @@ namespace linalg
             if (dv_.size() != n_mesh_)
                 // dv_ = Vecx<double>::Zero(n_mesh_);
                 dv_ = Vecx<double>(n_mesh_);
+            */
         }
 
         static cholmod_dense make_dense_view_(Matx<double> &M)
