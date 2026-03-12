@@ -29,16 +29,46 @@ namespace linalg
     {
     };
 
-    template <> struct is_scalar<float> : std::true_type {};
-    template <> struct is_scalar<double> : std::true_type {};
-    template <> struct is_scalar<int> : std::true_type {};
-    template <> struct is_scalar<unsigned int> : std::true_type {};
-    template <> struct is_scalar<long> : std::true_type {};
-    template <> struct is_scalar<unsigned long> : std::true_type {};
-    template <> struct is_scalar<short> : std::true_type {};
-    template <> struct is_scalar<unsigned short> : std::true_type {};
-    template <> struct is_scalar<char> : std::true_type {};
-    template <> struct is_scalar<unsigned char> : std::true_type {};
+    template <>
+    struct is_scalar<float> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<double> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<int> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<unsigned int> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<long> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<unsigned long> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<short> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<unsigned short> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<char> : std::true_type
+    {
+    };
+    template <>
+    struct is_scalar<unsigned char> : std::true_type
+    {
+    };
 
     template <typename Type>
     class MatView
@@ -48,7 +78,7 @@ namespace linalg
 
         MatView() : data_(nullptr), rows_(0), cols_(0) {}
 
-        MatView(Type* ptr, int rows, int cols)
+        MatView(Type *ptr, int rows, int cols)
             : data_(ptr), rows_(rows), cols_(cols)
         {
             LINALG_ASSERT(rows >= 0);
@@ -56,7 +86,7 @@ namespace linalg
             LINALG_ASSERT((rows == 0 || cols == 0) || ptr != nullptr);
         }
 
-        void bind(Type* ptr, int rows, int cols)
+        void bind(Type *ptr, int rows, int cols)
         {
             LINALG_ASSERT(rows >= 0);
             LINALG_ASSERT(cols >= 0);
@@ -67,7 +97,7 @@ namespace linalg
             cols_ = cols;
         }
 
-        Type& operator()(int r, int c)
+        Type &operator()(int r, int c)
         {
 #pragma HLS INLINE
             LINALG_ASSERT(data_ != nullptr);
@@ -85,13 +115,13 @@ namespace linalg
             return data_[c * rows_ + r]; // column-major
         }
 
-        Type* data()
+        Type *data()
         {
 #pragma HLS INLINE
             return data_;
         }
 
-        const Type* data() const
+        const Type *data() const
         {
 #pragma HLS INLINE
             return data_;
@@ -125,7 +155,7 @@ namespace linalg
         // Basic fill / copy
         // ------------------------------------------------------------
 
-        void copyTo(MatView<Type>& out) const
+        void copyTo(MatView<Type> &out) const
         {
             LINALG_ASSERT(rows_ == out.rows());
             LINALG_ASSERT(cols_ == out.cols());
@@ -137,7 +167,7 @@ namespace linalg
             copy_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = (*this)(r, c);
                 }
             }
@@ -153,13 +183,13 @@ namespace linalg
             zero_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) = Type(0);
                 }
             }
         }
 
-        void setConstant(const Type& value)
+        void setConstant(const Type &value)
         {
             LINALG_ASSERT(data_ != nullptr);
 
@@ -169,7 +199,7 @@ namespace linalg
             const_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) = value;
                 }
             }
@@ -183,7 +213,7 @@ namespace linalg
         diag_loop:
             for (int i = 0; i < rows_; ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 (*this)(i, i) = Type(1);
             }
         }
@@ -193,7 +223,7 @@ namespace linalg
         // ------------------------------------------------------------
 
         template <typename OtherType>
-        void addInPlace(const MatView<OtherType>& rhs)
+        void addInPlace(const MatView<OtherType> &rhs)
         {
             LINALG_ASSERT(rows_ == rhs.rows());
             LINALG_ASSERT(cols_ == rhs.cols());
@@ -204,14 +234,14 @@ namespace linalg
             add_ip_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) += Type(rhs(r, c));
                 }
             }
         }
 
         template <typename OtherType>
-        void subInPlace(const MatView<OtherType>& rhs)
+        void subInPlace(const MatView<OtherType> &rhs)
         {
             LINALG_ASSERT(rows_ == rhs.rows());
             LINALG_ASSERT(cols_ == rhs.cols());
@@ -222,7 +252,7 @@ namespace linalg
             sub_ip_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) -= Type(rhs(r, c));
                 }
             }
@@ -240,7 +270,7 @@ namespace linalg
             scale_ip_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) = Type((*this)(r, c) * Type(s));
                 }
             }
@@ -258,7 +288,7 @@ namespace linalg
             div_ip_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) = Type((*this)(r, c) / Type(s));
                 }
             }
@@ -270,7 +300,7 @@ namespace linalg
         // ------------------------------------------------------------
 
         template <typename OtherType, typename OutType>
-        void matadd(const MatView<OtherType>& rhs, MatView<OutType>& out) const
+        void matadd(const MatView<OtherType> &rhs, MatView<OutType> &out) const
         {
             LINALG_ASSERT(rows_ == rhs.rows());
             LINALG_ASSERT(cols_ == rhs.cols());
@@ -283,14 +313,14 @@ namespace linalg
             add_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = OutType((*this)(r, c)) + OutType(rhs(r, c));
                 }
             }
         }
 
         template <typename OtherType, typename OutType>
-        void matsub(const MatView<OtherType>& rhs, MatView<OutType>& out) const
+        void matsub(const MatView<OtherType> &rhs, MatView<OutType> &out) const
         {
             LINALG_ASSERT(rows_ == rhs.rows());
             LINALG_ASSERT(cols_ == rhs.cols());
@@ -303,14 +333,14 @@ namespace linalg
             sub_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = OutType((*this)(r, c)) - OutType(rhs(r, c));
                 }
             }
         }
 
         template <typename ScalarType, typename OutType>
-        void scale(ScalarType s, MatView<OutType>& out) const
+        void scale(ScalarType s, MatView<OutType> &out) const
         {
             static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
                           "scale requires a scalar type");
@@ -324,14 +354,14 @@ namespace linalg
             scale_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = OutType((*this)(r, c)) * OutType(s);
                 }
             }
         }
 
         template <typename ScalarType, typename OutType>
-        void div(ScalarType s, MatView<OutType>& out) const
+        void div(ScalarType s, MatView<OutType> &out) const
         {
             static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
                           "div requires a scalar type");
@@ -345,14 +375,14 @@ namespace linalg
             div_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = OutType((*this)(r, c)) / OutType(s);
                 }
             }
         }
 
         template <typename OutType>
-        void negate(MatView<OutType>& out) const
+        void negate(MatView<OutType> &out) const
         {
             LINALG_ASSERT(rows_ == out.rows());
             LINALG_ASSERT(cols_ == out.cols());
@@ -363,14 +393,14 @@ namespace linalg
             neg_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = -OutType((*this)(r, c));
                 }
             }
         }
 
         template <typename OutType>
-        void matsqrt(MatView<OutType>& out) const
+        void matsqrt(MatView<OutType> &out) const
         {
             LINALG_ASSERT(rows_ == out.rows());
             LINALG_ASSERT(cols_ == out.cols());
@@ -381,8 +411,26 @@ namespace linalg
             sqrt_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     out(r, c) = math::sqrt(OutType((*this)(r, c)));
+                }
+            }
+        }
+
+        template <typename OutType>
+        void transposeTo(MatView<OutType> &out) const
+        {
+            LINALG_ASSERT(out.rows() == cols_);
+            LINALG_ASSERT(out.cols() == rows_);
+
+        transpose_loop_c:
+            for (int c = 0; c < cols_; ++c)
+            {
+            transpose_loop_r:
+                for (int r = 0; r < rows_; ++r)
+                {
+#pragma HLS PIPELINE II = 1
+                    out(c, r) = OutType((*this)(r, c));
                 }
             }
         }
@@ -400,7 +448,7 @@ namespace linalg
         // ------------------------------------------------------------
 
         template <typename OtherType, typename OutType>
-        void matmul(const MatView<OtherType>& rhs, MatView<OutType>& out) const
+        void matmul(const MatView<OtherType> &rhs, MatView<OutType> &out) const
         {
             LINALG_ASSERT(cols_ == rhs.rows());
             LINALG_ASSERT(rows_ == out.rows());
@@ -417,7 +465,7 @@ namespace linalg
                 mm_loop_k:
                     for (int k = 0; k < cols_; ++k)
                     {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                         acc += OutType((*this)(r, k)) * OutType(rhs(k, c));
                     }
 
@@ -431,7 +479,7 @@ namespace linalg
         // ------------------------------------------------------------
 
         template <typename OtherType, typename AccType = promote_t<Type, OtherType>>
-        AccType dot(const MatView<OtherType>& rhs) const
+        AccType dot(const MatView<OtherType> &rhs) const
         {
             LINALG_ASSERT(rows_ == rhs.rows());
             LINALG_ASSERT(cols_ == rhs.cols());
@@ -444,7 +492,7 @@ namespace linalg
             dot_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     acc += AccType((*this)(r, c)) * AccType(rhs(r, c));
                 }
             }
@@ -463,7 +511,7 @@ namespace linalg
             sqnorm_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     AccType v = AccType((*this)(r, c));
                     acc += v * v;
                 }
@@ -479,7 +527,7 @@ namespace linalg
         }
 
     protected:
-        Type* data_;
+        Type *data_;
         int rows_;
         int cols_;
     };
@@ -493,14 +541,14 @@ namespace linalg
 
         VecView() : Base() {}
 
-        VecView(Type* ptr, int size)
+        VecView(Type *ptr, int size)
             : Base(ptr,
                    (Orient == VecOrient::Column ? size : 1),
                    (Orient == VecOrient::Column ? 1 : size))
         {
         }
 
-        void bind(Type* ptr, int size)
+        void bind(Type *ptr, int size)
         {
             Base::bind(ptr,
                        (Orient == VecOrient::Column ? size : 1),
@@ -513,7 +561,7 @@ namespace linalg
             return this->size();
         }
 
-        Type& operator()(int i)
+        Type &operator()(int i)
         {
 #pragma HLS INLINE
             LINALG_ASSERT(this->data_ != nullptr);
@@ -530,7 +578,7 @@ namespace linalg
         }
 
         template <typename OtherType, VecOrient OtherOrient, typename AccType = promote_t<Type, OtherType>>
-        AccType dot(const VecView<OtherType, OtherOrient>& rhs) const
+        AccType dot(const VecView<OtherType, OtherOrient> &rhs) const
         {
             LINALG_ASSERT(this->size() == rhs.size());
 
@@ -539,7 +587,7 @@ namespace linalg
         vec_dot_loop:
             for (int i = 0; i < this->size(); ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 acc += AccType((*this)(i)) * AccType(rhs(i));
             }
 
@@ -547,7 +595,7 @@ namespace linalg
         }
 
         template <typename OutType>
-        void add(const VecView<Type, Orient>& rhs, VecView<OutType, Orient>& out) const
+        void add(const VecView<Type, Orient> &rhs, VecView<OutType, Orient> &out) const
         {
             LINALG_ASSERT(this->size() == rhs.size());
             LINALG_ASSERT(this->size() == out.size());
@@ -555,13 +603,13 @@ namespace linalg
         vadd_loop:
             for (int i = 0; i < this->size(); ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 out(i) = OutType((*this)(i)) + OutType(rhs(i));
             }
         }
 
         template <typename OutType>
-        void sub(const VecView<Type, Orient>& rhs, VecView<OutType, Orient>& out) const
+        void sub(const VecView<Type, Orient> &rhs, VecView<OutType, Orient> &out) const
         {
             LINALG_ASSERT(this->size() == rhs.size());
             LINALG_ASSERT(this->size() == out.size());
@@ -569,7 +617,7 @@ namespace linalg
         vsub_loop:
             for (int i = 0; i < this->size(); ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 out(i) = OutType((*this)(i)) - OutType(rhs(i));
             }
         }

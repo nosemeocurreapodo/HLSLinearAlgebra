@@ -16,27 +16,27 @@ namespace linalg
         using value_type = Type;
 
         using Base::operator();
-        using Base::rows;
-        using Base::cols;
-        using Base::size;
-        using Base::data;
-        using Base::setZero;
-        using Base::setIdentity;
-        using Base::copyTo;
-        using Base::matadd;
-        using Base::matsub;
-        using Base::matmul;
-        using Base::scale;
-        using Base::div;
-        using Base::negate;
-        using Base::matsqrt;
         using Base::addInPlace;
-        using Base::subInPlace;
-        using Base::scaleInPlace;
+        using Base::cols;
+        using Base::copyTo;
+        using Base::data;
+        using Base::div;
         using Base::divInPlace;
         using Base::dot;
+        using Base::matadd;
+        using Base::matmul;
+        using Base::matsqrt;
+        using Base::matsub;
+        using Base::negate;
         using Base::norm;
+        using Base::rows;
+        using Base::scale;
+        using Base::scaleInPlace;
+        using Base::setIdentity;
+        using Base::setZero;
+        using Base::size;
         using Base::squaredNorm;
+        using Base::subInPlace;
 
         Matx()
             : Base(), storage_(), rows_(0), cols_(0)
@@ -170,10 +170,17 @@ namespace linalg
             copy_loop_r:
                 for (int r = 0; r < rows_; ++r)
                 {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                     (*this)(r, c) = Type(other(r, c));
                 }
             }
+        }
+
+        Matx transpose()
+        {
+            Matx out(cols_, rows_);
+            this->transposeTo(out);
+            return out;
         }
 
         // ------------------------------------------------------------
@@ -321,14 +328,14 @@ namespace linalg
         using value_type = Type;
 
         using Base::operator();
-        using Base::length;
-        using Base::size;
-        using Base::data;
-        using Base::setZero;
-        using Base::setConstant;
         using Base::copyTo;
+        using Base::data;
         using Base::dot;
+        using Base::length;
         using Base::norm;
+        using Base::setConstant;
+        using Base::setZero;
+        using Base::size;
         using Base::squaredNorm;
 
         Vecx()
@@ -433,7 +440,7 @@ namespace linalg
         copy_vec_loop:
             for (int i = 0; i < size_; ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 (*this)(i) = Type(other(i));
             }
         }
@@ -450,7 +457,7 @@ namespace linalg
         vadd_ip_loop:
             for (int i = 0; i < size_; ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 (*this)(i) += Type(rhs(i));
             }
             return *this;
@@ -464,7 +471,7 @@ namespace linalg
         vsub_ip_loop:
             for (int i = 0; i < size_; ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 (*this)(i) -= Type(rhs(i));
             }
             return *this;
@@ -479,8 +486,8 @@ namespace linalg
         vscale_ip_loop:
             for (int i = 0; i < size_; ++i)
             {
-#pragma HLS PIPELINE II=1
-                (*this)(i) = Type((*this)(i) * Type(s));
+#pragma HLS PIPELINE II = 1
+                (*this)(i) = Type((*this)(i)*Type(s));
             }
             return *this;
         }
@@ -494,7 +501,7 @@ namespace linalg
         vdiv_ip_loop:
             for (int i = 0; i < size_; ++i)
             {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
                 (*this)(i) = Type((*this)(i) / Type(s));
             }
             return *this;
@@ -527,7 +534,7 @@ namespace linalg
     vadd_loop:
         for (int i = 0; i < lhs.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = OutType(lhs(i)) + OutType(rhs(i));
         }
 
@@ -546,7 +553,7 @@ namespace linalg
     vsub_loop:
         for (int i = 0; i < lhs.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = OutType(lhs(i)) - OutType(rhs(i));
         }
 
@@ -561,7 +568,7 @@ namespace linalg
     vneg_loop:
         for (int i = 0; i < vec.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = -Type(vec(i));
         }
 
@@ -579,7 +586,7 @@ namespace linalg
     vscale_loop:
         for (int i = 0; i < vec.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = OutType(vec(i)) * OutType(s);
         }
 
@@ -597,7 +604,7 @@ namespace linalg
     vscale_loop2:
         for (int i = 0; i < vec.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = OutType(vec(i)) * OutType(s);
         }
 
@@ -615,7 +622,7 @@ namespace linalg
     vdiv_loop:
         for (int i = 0; i < vec.size(); ++i)
         {
-#pragma HLS PIPELINE II=1
+#pragma HLS PIPELINE II = 1
             out(i) = OutType(vec(i)) / OutType(s);
         }
 
