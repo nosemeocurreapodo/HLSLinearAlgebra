@@ -63,7 +63,7 @@ void TestLDLTxSolverRandomSPD(int num_systems = 5, int num_rhs_per_system = 3)
         ldltc_linalg.compute(Ac_linalg);
 
         // Factorization with your LDLT
-        LDLTx<Matx<double>> ldlt_linalg(size);
+        LDLTx<double> ldlt_linalg(size);
         ldlt_linalg.compute(A_linalg);
 
         LDLT_LAPACK<double> ldlt_lapack(size);
@@ -194,7 +194,7 @@ TEST(LDLTx_solver, TimingComparison)
     }
 
     LDLT<T, n> ldltc_linalg;
-    LDLTx<Matx<T>> ldlt_linalg(n);
+    LDLTx<T> ldlt_linalg(n);
     LDLT_LAPACK<T> ldlt_lapack(n);
     DENSE_CHOLESKY_CHOLMOD<T> cholesky_lapack(n);
     Eigen::LDLT<Eigen::MatrixX<T>> ldlt_eig(n);

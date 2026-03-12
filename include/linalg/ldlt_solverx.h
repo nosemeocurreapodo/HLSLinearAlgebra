@@ -22,10 +22,11 @@ namespace math = std;
 
 namespace linalg
 {
-    template <typename Mat>
+    template <typename T>
     class LDLTx
     {
     public:
+
         // LDLTx()
         //     : LDLTx(0)
         //{
@@ -38,7 +39,7 @@ namespace linalg
 
         // Compute the LDLT decomposition of a matrix A.
         // This must be called before solve().
-        void compute(const Mat &A)
+        void compute(const Matx<T> &A)
         {
             A_ = A;
             ldlt_decompose();
@@ -46,7 +47,7 @@ namespace linalg
 
         // Solve A x = b for x, given b.
         // Assumes compute() has been called.
-        Mat &solve(const Mat &b)
+        Vecx<T> &solve(const Vecx<T> &b)
         {
             // 1) Solve L y = b (Forward substitution)
             forward_substitution(L_, b, y_);
@@ -104,82 +105,82 @@ namespace linalg
                 auto sum = A_(i, i);
                 for (int k = 0; k < i; ++k)
                 {
-                    sum -= L_(i, k) * L_(i, k) * D_(k, 0);
+                    sum -= L_(i, k) * L_(i, k) * D_(k);
                 }
-                D_(i, 0) = sum;
+                D_(i) = sum;
 
-                if (math::fabs(D_(i, 0)) < 1e-12)
+                if (math::fabs(D_(i)) < 1e-12)
                 {
                     // Matrix is not positive definite or is singular.
                     // A robust implementation would throw or return an error.
                 }
 
                 // 2) Compute L[j][i] for j = i+1..n-1
-                invD_(i, 0) = 1 / D_(i, 0);
+                invD_(i) = 1 / D_(i);
                 for (int j = i + 1; j < size_; ++j)
                 {
                     auto val = A_(j, i);
                     // Subtract the part contributed by previous columns
                     for (int k = 0; k < i; ++k)
                     {
-                        val -= L_(j, k) * L_(i, k) * D_(k, 0);
+                        val -= L_(j, k) * L_(i, k) * D_(k);
                     }
                     // L[j][i] = (A[j][i] - ...) / D[i]
-                    L_(j, i) = val * invD_(i, 0);
+                    L_(j, i) = val * invD_(i);
                 }
             }
         }
 
         // Forward substitution for L y = b
         // L is lower triangular with diagonal = 1.0
-        void forward_substitution(const Mat &L, const Mat &b, Mat &y)
+        void forward_substitution(const Matx<T> &L, const Vecx<T> &b, Vecx<T> &y)
         {
             for (int i = 0; i < size_; ++i)
             {
-                auto sum = b(i, 0);
+                auto sum = b(i);
                 for (int j = 0; j < i; ++j)
                 {
-                    sum -= L(i, j) * y(j, 0);
+                    sum -= L(i, j) * y(j);
                 }
                 // L(i, i) is 1.0
-                y(i, 0) = sum;
+                y(i) = sum;
             }
         }
 
         // Diagonal solve for D z = y
         // D is diagonal, stored as a vector. z[i] = y[i] / D[i]
-        void diagonal_solve(const Mat &D, const Mat &y, Mat &z)
+        void diagonal_solve(const Vecx<T> &D, const Vecx<T> &y, Vecx<T> &z)
         {
             for (int i = 0; i < size_; ++i)
             {
-                z(i, 0) = y(i, 0) / D(i, 0);
+                z(i) = y(i) / D(i);
             }
         }
 
         // Back substitution for L^T x = z
         // L is lower-triangular, so L^T is upper-triangular.
-        void back_substitution_transpose(const Mat &L, const Mat &z, Mat &x)
+        void back_substitution_transpose(const Matx<T> &L, const Vecx<T> &z, Vecx<T> &x)
         {
             for (int i = size_ - 1; i >= 0; --i)
             {
-                auto sum = z(i, 0);
+                auto sum = z(i);
                 for (int j = i + 1; j < size_; ++j)
                 {
-                    sum -= L(j, i) * x(j, 0); // L^T[i][j] = L[j][i]
+                    sum -= L(j, i) * x(j); // L^T[i][j] = L[j][i]
                 }
                 // L[i][i] = 1.0
-                x(i, 0) = sum;
+                x(i) = sum;
             }
         }
 
-        Mat A_;
-        Mat L_;
-        Mat D_;    // Store diagonal of D as a vector
-        Mat invD_; // Store inverse of diagonal of D as a vector
+        Matx<T> A_;
+        Matx<T> L_;
+        Vecx<T> D_;    // Store diagonal of D as a vector
+        Vecx<T> invD_; // Store inverse of diagonal of D as a vector
 
-        Mat y_;
-        Mat x_;
-        Mat z_;
+        Vecx<T> y_;
+        Vecx<T> x_;
+        Vecx<T> z_;
 
         int size_;
     };
