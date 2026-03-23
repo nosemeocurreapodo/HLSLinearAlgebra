@@ -284,7 +284,7 @@ public:
         }
         else
         {
-            int shift = count_leading_simbol(frac) - 2;
+            int shift = count_leading_zeros(frac) - 2;
             if (shift > 0)
             {
                 frac = frac << shift;

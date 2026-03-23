@@ -15,37 +15,33 @@ public:
     {
         // #pragma HLS INLINE
 
-        bool isZero = false;
         if (bits == 0)
-            isZero = true;
+        {
+            sign_ = 0;
+            exp_ = 0;
+            frac_ = 0;
+            return;
+        }
 
-        bool sign = bits[in_nbits - 1];
+        sign_ = bits[in_nbits - 1];
+
+        // exponent bits
         ap_uint<in_ebits> exp = bits(in_nbits - 2, in_nbits - 1 - in_ebits);
+        exp_ = exp - (ap_int<in_ebits + 1>)fbias<in_ebits>::value;
+
         ap_ufixed<in_nbits - in_ebits, 1> frac;
         frac[in_nbits - in_ebits - 1] = 1;
         frac(in_nbits - in_ebits - 2, 0) = bits(in_nbits - 2 - in_ebits, 0);
 
         ap_ufixed<in_nbits - in_ebits, 1> rfrac;
-        if (in_nbits - in_ebits - 1 > fbits)
-            rfrac = round_to(frac, fbits - 1);
-        else
-            rfrac = frac;
-
-        sign_ = sign;
-
-        // exponent bits
-        if (isZero)
-            exp_ = 0;
-        else
-            // unpacked.exp = exp - hls::pow(2, es - 1) + 1;
-            exp_ = exp - (1 << (in_ebits - 1)) + 1;
+        // if (in_nbits - in_ebits - 1 > fbits)
+        //     rfrac = round_to(frac, fbits - 1);
+        // else
+        rfrac = frac;
 
         // fraction bits
         // add leading 1
-        if (isZero)
-            frac_ = 0;
-        else
-            frac_ = rfrac;
+        frac_ = rfrac;
     }
 
     template <int in_nbits, int in_ebits>
@@ -53,14 +49,17 @@ public:
     {
         // #pragma HLS INLINE
 
+        if (frac_ == 0)
+            return 0;
+
         ap_uint<in_nbits> bits;
 
         ap_int<in_ebits + 1> exp;
-        if (frac_ == 0)
-            exp = 0;
-        else
-            // exp = unpacked.exp + hls::pow(2, es - 1) - 1;
-            exp = exp_ + (1 << (in_ebits - 1)) - 1;
+        // if (frac_ == 0)
+        //     exp = 0;
+        // else
+        //  exp = unpacked.exp + hls::pow(2, es - 1) - 1;
+        exp = exp_ + (ap_int<in_ebits + 1>)fbias<in_ebits>::value;
 
         ap_ufixed<fbits + 1, 1> rfrac;
         if (fbits > in_nbits - in_ebits - 1)
@@ -81,6 +80,10 @@ public:
     FloatXUnpacked operator+(const FloatXUnpacked &rhs) const
     {
         // #pragma HLS INLINE
+        if (frac_ == 0)
+            return rhs;
+        if (rhs.frac_ == 0)
+            return *this;
 
         // set biggest posit to be in1
         ap_int<ebits + 1> diff_texp = exp_ - rhs.exp_;
@@ -310,8 +313,8 @@ public:
     {
         // #pragma HLS INLINE
 
-        ap_uint<32> bits = *reinterpret_cast<ap_uint<32> *>(&c);
-
+        // ap_uint<32> bits = *reinterpret_cast<ap_uint<32> *>(&c);
+        ap_uint<32> bits = bitcast_u32(c);
         FloatXUnpacked<8, 23> unpacked;
         unpacked.template decode<32, 8>(bits);
         bits_ = unpacked.template encode<nbits, ebits>();
@@ -321,8 +324,8 @@ public:
     {
         // #pragma HLS INLINE
 
-        ap_uint<64> bits = *reinterpret_cast<ap_uint<64> *>(&c);
-
+        // ap_uint<64> bits = *reinterpret_cast<ap_uint<64> *>(&c);
+        ap_uint<64> bits = bitcast_u64(c);
         FloatXUnpacked<11, 52> unpacked;
         unpacked.template decode<64, 11>(bits);
         bits_ = unpacked.template encode<nbits, ebits>();
@@ -343,8 +346,9 @@ public:
         unpacked.template decode<nbits, ebits>(bits_);
         ap_uint<32> bits = unpacked.template encode<32, 8>();
 
-        float fresult = *reinterpret_cast<float *>(&bits);
-        return fresult;
+        // float fresult = *reinterpret_cast<float *>(&bits);
+        // return fresult;
+        return bitcast_f32(bits);
     }
 
     operator double() const
@@ -355,8 +359,9 @@ public:
         unpacked.template decode<nbits, ebits>(bits_);
         ap_uint<64> bits = unpacked.template encode<64, 11>();
 
-        double fresult = *reinterpret_cast<double *>(&bits);
-        return fresult;
+        // double fresult = *reinterpret_cast<double *>(&bits);
+        // return fresult;
+        return bitcast_f64(bits);
     }
 
     operator FloatXUnpacked<ebits, fbits>() const
@@ -416,86 +421,6 @@ public:
         res.template decode<nbits, ebits>(bits_);
         return -res;
     }
-
-    /*
-        FloatX operator+(const FloatX &rhs) const
-        {
-            // #pragma HLS INLINE
-
-            FloatXUnpacked<ebits, fbits> in1;
-            in1.template decode<nbits, ebits>(bits_);
-            FloatXUnpacked<ebits, fbits> in2;
-            in2.template decode<nbits, ebits>(rhs.bits_);
-
-            FloatXUnpacked<ebits, fbits> res = in1 + in2;
-
-            FloatX out;
-            out.bits_ = res.template encode<nbits, ebits>();
-
-            return out;
-        }
-
-    FloatX operator-(const FloatX &rhs) const
-    {
-        // #pragma HLS INLINE
-
-        FloatXUnpacked<ebits, fbits> in1;
-        in1.template decode<nbits, ebits>(bits_);
-        FloatXUnpacked<ebits, fbits> in2;
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        FloatXUnpacked<ebits, fbits> res = in1 - in2;
-
-        FloatX out;
-        out.bits_ = res.template encode<nbits, ebits>();
-
-        return out;
-    }
-
-    FloatX operator*(const FloatX &rhs) const
-    {
-        // #pragma HLS INLINE
-
-        FloatXUnpacked<ebits, fbits> in1;
-        in1.template decode<nbits, ebits>(bits_);
-        FloatXUnpacked<ebits, fbits> in2;
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        FloatXUnpacked<ebits, fbits> res = in1 * in2;
-
-        FloatX out;
-        out.bits_ = res.template encode<nbits, ebits>();
-        return out;
-    }
-
-    FloatX operator/(const FloatX &rhs) const
-    {
-        // #pragma HLS INLINE
-
-        FloatXUnpacked<ebits, fbits> in1;
-        in1.template decode<nbits, ebits>(bits_);
-        FloatXUnpacked<ebits, fbits> in2;
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        FloatXUnpacked<ebits, fbits> res = in1 / in2;
-
-        FloatX out;
-        out.bits_ = res.template encode<nbits, ebits>();
-
-        return out;
-    }
-
-     FloatX operator-() const
-     {
-         // #pragma HLS INLINE
-
-         FloatX result;
-         result.bits_ = bits_;
-         if (result.bits_ != 0)
-             result.bits_[nbits - 1] = !result.bits_[nbits - 1];
-         return result;
-     }
-     */
 
 private:
     ap_uint<nbits> bits_;

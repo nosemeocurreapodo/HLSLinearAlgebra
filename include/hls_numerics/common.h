@@ -320,12 +320,31 @@ STICKY_LOOP:
 // If you were passing (fbits-1) etc, revisit call sites.
 // In your posit code you often call round_to(frac, fbits-1).
 // That likely intended: "keep fbits-1 fractional bits". This wrapper does that.
+//template <int fbits, int ibits>
+//static inline ap_ufixed<fbits, ibits>
+//round_to(const ap_ufixed<fbits, ibits> &val, int frac_bit)
+//{
+//#pragma HLS INLINE
+//    return round_to_keep_fracbits<fbits, ibits>(val, frac_bit);
+//}
+
 template <int fbits, int ibits>
-static inline ap_ufixed<fbits, ibits>
-round_to(const ap_ufixed<fbits, ibits> &val, int frac_bit)
+ap_ufixed<fbits, ibits> round_to(const ap_ufixed<fbits, ibits> &val, int frac_bit)
 {
 #pragma HLS INLINE
-    return round_to_keep_fracbits<fbits, ibits>(val, frac_bit);
+
+    int first_frac_bit = fbits - 1 - ibits;
+
+    ap_ufixed<fbits, ibits> rval = val;
+    if (val[first_frac_bit - frac_bit] == 1)
+    {
+        ap_ufixed<fbits, ibits> one = 0;
+        one[first_frac_bit - frac_bit] = 1;
+        // if(pmantissa[0] == 0)
+        rval += one;
+        // pmantissa[0] = 1;
+    }
+    return rval;
 }
 
 // Small utility: floor(x / 2^EBITS) for signed x, with correct behavior for negatives.
