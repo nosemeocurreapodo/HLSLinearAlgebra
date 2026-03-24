@@ -142,6 +142,25 @@ COUNT_UF_LOOP:
     return count;
 }
 
+template <int nbits>
+static inline ap_int<clog2<nbits + 1>::value>
+count_leading_zeros(ap_int<nbits> bits)
+{
+#pragma HLS INLINE
+    ap_uint<clog2<nbits + 1>::value> count = 0;
+
+COUNT_UF_LOOP:
+    for (int i = nbits - 1; i >= 0; --i)
+    {
+#pragma HLS UNROLL
+        if (bits[i] == 0)
+            count++;
+        else
+            break;
+    }
+    return count;
+}
+
 // ---------------------------
 // Count leading bits == symbol
 // (ap_fixed)
@@ -264,8 +283,10 @@ round_to_keep_fracbits_rne(const ap_ufixed<W, I> &val, int frac_bit)
 
     // keep = number of fractional bits we keep
     int keep = frac_bit + 1;
-    if (keep < 0) keep = 0;
-    if (keep > F) keep = F;
+    if (keep < 0)
+        keep = 0;
+    if (keep > F)
+        keep = F;
 
     // If we keep all fractional bits, nothing to do
     if (keep == F)
@@ -320,11 +341,11 @@ STICKY_LOOP:
 // If you were passing (fbits-1) etc, revisit call sites.
 // In your posit code you often call round_to(frac, fbits-1).
 // That likely intended: "keep fbits-1 fractional bits". This wrapper does that.
-//template <int fbits, int ibits>
-//static inline ap_ufixed<fbits, ibits>
-//round_to(const ap_ufixed<fbits, ibits> &val, int frac_bit)
+// template <int fbits, int ibits>
+// static inline ap_ufixed<fbits, ibits>
+// round_to(const ap_ufixed<fbits, ibits> &val, int frac_bit)
 //{
-//#pragma HLS INLINE
+// #pragma HLS INLINE
 //    return round_to_keep_fracbits<fbits, ibits>(val, frac_bit);
 //}
 
