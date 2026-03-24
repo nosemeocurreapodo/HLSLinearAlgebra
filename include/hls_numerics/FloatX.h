@@ -144,8 +144,8 @@ public:
 
         ap_int<ebits + 1> diff_texp = (ap_int<ebits + 1>)(ap_uint<1>(0), exp_) - (ap_int<ebits + 1>)(ap_uint<1>(0), rhs.exp_);
 
-        ap_int<fbits + 2> frac1 = (ap_uint<2>(0b01), mant_);
-        ap_int<fbits + 2> frac2 = (ap_uint<2>(0b01), rhs.mant_);
+        ap_int<fbits + 3> frac1 = (ap_uint<2>(0b01), mant_, ap_uint<1>(0));
+        ap_int<fbits + 3> frac2 = (ap_uint<2>(0b01), rhs.mant_, ap_uint<1>(0));
 
         bool lhs_ge_rhs =
             (diff_texp > 0) ||
@@ -169,7 +169,7 @@ public:
         }
 
         // do addition (result is sure to be positive)
-        ap_int<fbits + 3> frac = frac1 + frac2;
+        ap_int<fbits + 4> frac = frac1 + frac2;
         // #pragma HLS BIND_OP variable = frac op = add impl = dsp latency = -1
 
         if (frac == 0)
@@ -188,7 +188,7 @@ public:
             frac = frac << shift;
             exp = exp - shift;
         }
-        else if (shift < 0)
+        if (shift < 0)
         {
             frac = frac >> -shift;
             exp = exp + -shift;
@@ -196,21 +196,20 @@ public:
 
         // round
         /*
-        ap_uint<fbits + 2> rfrac = (ap_uint<1>(0), other.mant_(ofbits - 1, ofbits - fbits - 1));
-        if (rfrac[0] == 1)
-            rfrac += 1;
-        if (rfrac[fbits + 1] == 1)
+        if (frac[0] == 1)
+            frac += 1;
+
+        if (frac[fbits + 2] == 1)
         {
-            rfrac = rfrac >> 1;
+            frac = frac >> 1;
             exp++;
         }
-        mant_(fbits - 1, 0) = rfrac(fbits, 1);
         */
 
         out.zero_ = zero;
         out.sign_ = sign;
         out.exp_ = exp;
-        out.mant_ = frac(fbits - 1, 0);
+        out.mant_ = frac(fbits, 1);
 
         return out;
     }
@@ -250,19 +249,15 @@ public:
         }
 
         // round
-        // ap_ufixed<fbits * 2 + 2, 2> rfrac = round_to(frac, fbits - 1);
+        /*
+        if (frac[fbits - 1] == 1)
+            frac += 1;
 
         // normalize (again)
-        // if (rfrac >= 2)
-        //{
-        //    rfrac = rfrac >> 1;
-        //    exp++;
-        //}
-        /*
-        if (rfrac == 0)
+        if (frac[fbits * 2 + 1] == 1)
         {
-            exp = 0;
-            rfrac = 0;
+            frac = frac >> 1;
+            exp++;
         }
         */
 
