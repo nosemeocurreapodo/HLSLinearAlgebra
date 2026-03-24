@@ -36,13 +36,16 @@ public:
         sign_ = other.sign_;
         exp_ = exp(ebits - 1, 0);
         if (fbits >= ofbits)
+        {
             // no rounding needed
             mant_(fbits - 1, fbits - ofbits) = other.mant_(ofbits - 1, 0);
+            mant_(fbits - ofbits - 1, 0) = 0;
+        }
         else
         {
             // round as well
-            //mant_(fbits - 1, 0) = other.mant_(ofbits - 1, ofbits - fbits);
-            
+            // mant_(fbits - 1, 0) = other.mant_(ofbits - 1, ofbits - fbits);
+
             ap_uint<fbits + 2> rfrac = (ap_uint<1>(0), other.mant_(ofbits - 1, ofbits - fbits - 1));
             if (rfrac[0] == 1)
                 rfrac += 1;
@@ -52,7 +55,6 @@ public:
                 exp_++;
             }
             mant_(fbits - 1, 0) = rfrac(fbits, 1);
-            
         }
     }
 
@@ -142,8 +144,8 @@ public:
 
         ap_int<ebits + 1> diff_texp = (ap_int<ebits + 1>)(ap_uint<1>(0), exp_) - (ap_int<ebits + 1>)(ap_uint<1>(0), rhs.exp_);
 
-        ap_uint<fbits + 2> frac1 = (ap_uint<2>(0b01), mant_);
-        ap_uint<fbits + 2> frac2 = (ap_uint<2>(0b01), rhs.mant_);
+        ap_int<fbits + 2> frac1 = (ap_uint<2>(0b01), mant_);
+        ap_int<fbits + 2> frac2 = (ap_uint<2>(0b01), rhs.mant_);
 
         bool lhs_ge_rhs =
             (diff_texp > 0) ||
@@ -170,7 +172,6 @@ public:
         ap_int<fbits + 3> frac = frac1 + frac2;
         // #pragma HLS BIND_OP variable = frac op = add impl = dsp latency = -1
 
-        // normalize
         if (frac == 0)
         {
             zero = 1;
@@ -180,6 +181,7 @@ public:
             zero = 0;
         }
 
+        // normalize
         int shift = count_leading_zeros(frac) - 2;
         if (shift > 0)
         {
@@ -192,18 +194,23 @@ public:
             exp = exp + -shift;
         }
 
-        // ap_ufixed<fbits + 3, 3> rfrac = round_to(frac, fbits - 1);
-
-        // if (rfrac >= 2)
-        //{
-        //     rfrac = rfrac >> 1;
-        //     exp++;
-        // }
+        // round
+        /*
+        ap_uint<fbits + 2> rfrac = (ap_uint<1>(0), other.mant_(ofbits - 1, ofbits - fbits - 1));
+        if (rfrac[0] == 1)
+            rfrac += 1;
+        if (rfrac[fbits + 1] == 1)
+        {
+            rfrac = rfrac >> 1;
+            exp++;
+        }
+        mant_(fbits - 1, 0) = rfrac(fbits, 1);
+        */
 
         out.zero_ = zero;
         out.sign_ = sign;
         out.exp_ = exp;
-        out.mant_ = frac(fbits, 0);
+        out.mant_ = frac(fbits - 1, 0);
 
         return out;
     }
