@@ -87,6 +87,18 @@ public:
         }
     }
 
+    FloatXUnpacked<ebits + m_kbits, m_fbits> tofloatxunpacked() const
+    {
+        FloatXUnpacked<ebits + m_kbits, m_fbits> floatx_unpacked;
+        floatx_unpacked.zero_ = zero_;
+        floatx_unpacked.inf_ = inf_;
+        floatx_unpacked.sign_ = sign_;
+        floatx_unpacked.exp_ = getTotalExp() + fbias<ebits + m_kbits>::value;
+        floatx_unpacked.mant_ = mant_;
+
+        return floatx_unpacked;
+    }
+
     ap_uint<nbits> encode() const
     {
         // #pragma HLS INLINE off      // <- do NOT inline this hardware
@@ -920,12 +932,7 @@ public:
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
 
-        FloatXUnpacked<8, 23> floatx_unpacked;
-        floatx_unpacked.zero_ = unpacked.zero_;
-        floatx_unpacked.inf_ = unpacked.inf_;
-        floatx_unpacked.sign_ = unpacked.sign_;
-        floatx_unpacked.exp_ = unpacked.getTotalExp() + fbias<8>::value;
-        floatx_unpacked.mant_ = unpacked.frac_;
+        FloatXUnpacked<8, 23> floatx_unpacked(unpacked.tofloatxunpacked());
 
         ap_uint<32> bits = floatx_unpacked.encode();
 
@@ -939,12 +946,7 @@ public:
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
 
-        FloatXUnpacked<11, 52> floatx_unpacked;
-        floatx_unpacked.zero_ = unpacked.zero_;
-        floatx_unpacked.inf_ = unpacked.inf_;
-        floatx_unpacked.sign_ = unpacked.sign_;
-        floatx_unpacked.exp_ = unpacked.getTotalExp() + fbias<11>::value;
-        floatx_unpacked.mant_ = unpacked.mant_;
+        FloatXUnpacked<11, 52> floatx_unpacked(unpacked.tofloatxunpacked());
 
         ap_uint<64> bits = floatx_unpacked.encode();
 

@@ -169,7 +169,7 @@ public:
         }
 
         // do addition (result is sure to be positive)
-        ap_int<fbits + 4> frac = frac1 + frac2;
+        ap_uint<fbits + 4> frac = frac1 + frac2;
         // #pragma HLS BIND_OP variable = frac op = add impl = dsp latency = -1
 
         if (frac == 0)
