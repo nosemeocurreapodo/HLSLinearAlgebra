@@ -46,35 +46,67 @@ public:
     static const int m_fbits = nbits - ebits - 3;
     static constexpr int large_k = m_kbits + ebits + m_fbits;
 
-    // posit_unpacked()
-    //{
-    //  #pragma HLS allocation function instances = decode < kbits, ebits, fbits> limit = 1
-    //}
+    posit_unpacked()
+    {
+        //  #pragma HLS allocation function instances = decode < kbits, ebits, fbits> limit = 1
+    }
 
-    ap_uint<nbits> encode(const posit_unpacked &unpacked)
+    template <int oebits, int ofbits>
+    posit_unpacked(const FloatXUnpacked<oebits, ofbits> &other)
+    {
+        // #pragma HLS INLINE
+
+        ap_int<oebits + 1> oexp = (ap_int<oebits + 1>)(ap_uint<1>(0), other.exp_) - (ap_int<oebits + 1>)fbias<oebits>::value;
+        // ap_int<ebits + 1> exp = oexp + (ap_int<ebits + 1>)fbias<ebits>::value;
+
+        zero_ = other.zero_;
+        inf_ = other.inf_;
+        sign_ = other.sign_;
+        // exp_ = exp(ebits - 1, 0);
+        setKEFromTotalExp(oexp);
+        if (m_fbits >= ofbits)
+        {
+            // no rounding needed
+            mant_(m_fbits - 1, m_fbits - ofbits) = other.mant_(ofbits - 1, 0);
+            mant_(m_fbits - ofbits - 1, 0) = 0;
+        }
+        else
+        {
+            // round as well
+            // mant_(fbits - 1, 0) = other.mant_(ofbits - 1, ofbits - fbits);
+
+            ap_uint<m_fbits + 2> rfrac = (ap_uint<1>(0), other.mant_(ofbits - 1, ofbits - m_fbits - 1));
+            if (rfrac[0] == 1)
+                rfrac += 1;
+            if (rfrac[m_fbits + 1] == 1)
+            {
+                rfrac = rfrac >> 1;
+                exp_++;
+            }
+            mant_(m_fbits - 1, 0) = rfrac(m_fbits, 1);
+        }
+    }
+
+    ap_uint<nbits> encode() const
     {
         // #pragma HLS INLINE off      // <- do NOT inline this hardware
         // #pragma HLS PIPELINE II = 1 // pipeline so a single instance can accept 1/cycle
 
         // #pragma HLS INLINE
         //     #pragma HLS PIPELINE off
+
+        if (zero_)
+            return 0;
+
         ap_uint<nbits> bits;
 
         bool simbol;
         int reg_len;
 
-        if (unpacked.frac_ == 0)
-        {
-            simbol = 0;
-            reg_len = nbits - 1;
-        }
-        else
-        {
-            simbol = unpacked.k_ >= 0 ? 0 : 1;
-            reg_len = unpacked.k_ >= 0 ? int(unpacked.k_ + 1) : int(-unpacked.k_);
-        }
+        simbol = k_ >= 0 ? 0 : 1;
+        reg_len = k_ >= 0 ? int(k_ + 1) : int(-k_);
 
-        bits[nbits - 1] = unpacked.sign_;
+        bits[nbits - 1] = sign_;
         bits[nbits - 2] = simbol;
 
         enum states
@@ -111,7 +143,7 @@ public:
             {
                 // unpacked.exp[es - 1 - counter] = bits[bit];
                 int pos = ebits - dist;
-                bits[bit] = unpacked.exp_[pos];
+                bits[bit] = exp_[pos];
 
                 if (pos == 0)
                 {
@@ -124,7 +156,7 @@ public:
             if (state == F)
             {
                 int pos = m_fbits - dist;
-                bits[bit] = unpacked.frac_[pos];
+                bits[bit] = mant_[pos];
                 continue;
             }
         }
@@ -132,14 +164,13 @@ public:
         return bits;
     }
 
-    posit_unpacked decode(const ap_uint<nbits> &bits)
+    void decode(const ap_uint<nbits> &bits)
     {
         // #pragma HLS INLINE off      // <- do NOT inline this hardware
         // #pragma HLS PIPELINE II = 1 // pipeline so a single instance can accept 1/cycle
 
-        posit_unpacked unpacked;
-
-        unpacked.sign_ = bits[nbits - 1];
+        zero_ = bits == 0;
+        sign_ = bits[nbits - 1];
         bool simbol = bits[nbits - 2];
 
         // ap_int<kbits> k;
@@ -150,15 +181,15 @@ public:
         if (bits[nbits - 1])
         {
             // for inf, start k as a large number
-            unpacked.k_ = unpacked.large_k;
-            unpacked.exp_ = 0;
-            unpacked.frac_ = 1.0;
+            k_ = large_k;
+            exp_ = 0;
+            mant_ = 0;
         }
         else
         {
-            unpacked.k_ = 0;
-            unpacked.exp_ = 0;
-            unpacked.frac_ = 0.0;
+            k_ = 0;
+            exp_ = 0;
+            mant_ = 0;
         }
 
         enum states
@@ -183,9 +214,9 @@ public:
                     //  counter = nbits - 3 - bit;
 
                     if (simbol == 0)
-                        unpacked.k_ = dist - 1;
+                        k_ = dist - 1;
                     else
-                        unpacked.k_ = -dist;
+                        k_ = -dist;
 
                     last_state_bit = bit;
 
@@ -198,12 +229,12 @@ public:
             {
                 // unpacked.exp[es - 1 - counter] = bits[bit];
                 int pos = ebits - dist;
-                unpacked.exp_[pos] = bits[bit];
+                exp_[pos] = bits[bit];
 
                 if (pos == 0)
                 {
                     last_state_bit = bit;
-                    unpacked.frac_[m_fbits] = 1;
+                    // mant_[m_fbits] = 1;
                     state = F;
                 }
                 continue;
@@ -212,12 +243,10 @@ public:
             if (state == F)
             {
                 int pos = m_fbits - dist;
-                unpacked.frac_[pos] = bits[bit];
+                mant_[pos] = bits[bit];
                 continue;
             }
         }
-
-        return unpacked;
     }
 
     int getTotalExp() const
@@ -269,61 +298,67 @@ public:
         // set biggest posit to be in1
         // int diff_texp = exp1 - exp2;
 
+        if (zero_)
+            return rhs;
+        if (rhs.zero_)
+            return *this;
+
+        bool sign;
+        bool zero;
+        bool inf = 0;
+        ap_uint<ebits> exp;
+        ap_uint<m_kbits> k;
+
         ap_int<m_kbits + ebits> diff_texp = (k_ - rhs.k_) * (1 << ebits) + exp_ - rhs.exp_;
 
-        ap_fixed<m_fbits + 2, 2> frac1 = frac_;
-        ap_fixed<m_fbits + 2, 2> frac2 = rhs.frac_;
+        ap_int<m_fbits + 3> frac1 = (ap_uint<2>(0b01), mant_, ap_uint<1>(0));
+        ap_int<m_fbits + 3> frac2 = (ap_uint<2>(0b01), rhs.mant_, ap_uint<1>(0));
 
-        ap_int<ebits + 2> exp;
-        ap_int<m_kbits> k;
-        bool sign;
+        bool lhs_ge_rhs =
+            (diff_texp > 0) ||
+            (diff_texp == 0 && frac1 >= frac2);
 
-        if (diff_texp >= 0)
+        if (lhs_ge_rhs)
         {
             sign = sign_;
-            exp = exp_;
             k = k_;
-
+            exp = exp_;
             frac2 = frac2 >> diff_texp;
-
             if (sign_ != rhs.sign_)
                 frac2 = -frac2;
         }
         else
         {
             sign = rhs.sign_;
-            exp = rhs.exp_;
             k = rhs.k_;
-
+            exp = rhs.exp_;
             frac1 = frac1 >> -diff_texp;
-
             if (sign_ != rhs.sign_)
                 frac1 = -frac1;
         }
 
         // do addition (always positive)
-        ap_ufixed<m_fbits + 3, 3> frac = frac1 + frac2;
+        ap_uint<m_fbits + 4> frac = frac1 + frac2;
 
-        // normalize
         if (frac == 0)
         {
-            sign = 0;
-            k = 0;
-            exp = 0;
+            zero = 1;
         }
         else
         {
-            int shift = count_leading_zeros(frac) - 2;
-            if (shift > 0)
-            {
-                frac = frac << shift;
-                exp = exp - shift;
-            }
-            else if (shift < 0)
-            {
-                frac = frac >> -shift;
-                exp = exp + -shift;
-            }
+            zero = 0;
+        }
+
+        int shift = count_leading_zeros(frac) - 2;
+        if (shift > 0)
+        {
+            frac = frac << shift;
+            exp = exp - shift;
+        }
+        else if (shift < 0)
+        {
+            frac = frac >> -shift;
+            exp = exp + -shift;
         }
 
         // normalize exponent
@@ -339,16 +374,17 @@ public:
             k--;
         }
 
-        ap_ufixed<m_fbits + 3, 3> rfrac = round_to(frac, m_fbits - 1);
+        // round
+        /*
+        if (frac[0] == 1)
+            frac += 1;
 
-        // normalize fraction (again)
-        if (rfrac >= 2)
+        if (frac[fbits + 2] == 1)
         {
-            rfrac = rfrac >> 1;
+            frac = frac >> 1;
             exp++;
         }
 
-        // normalize exponent
         if (exp >= (1 << ebits))
         {
             exp -= (1 << ebits);
@@ -360,14 +396,17 @@ public:
             exp += (1 << ebits);
             k--;
         }
+        */
 
         posit_unpacked out;
 
         // out.setKEFromTotalExp(exp);
+        out.zero_ = zero;
+        out.inf_ = inf;
         out.sign_ = sign;
         out.k_ = k;
         out.exp_ = exp;
-        out.frac_ = rfrac;
+        out.mant_ = frac(m_fbits, 1);
 
         return out;
     }
@@ -387,6 +426,7 @@ public:
         return out;
     }
 
+    /*
     posit_unpacked operator/(const posit_unpacked &rhs) const
     {
         // #pragma HLS INLINE
@@ -426,28 +466,26 @@ public:
             k--;
         }
 
-        /*
-        if (exp < 0)
-        {
-            exp += hls::pow(2, es);
-            k--;
-        }
-        */
+        //if (exp < 0)
+        //{
+        //    exp += hls::pow(2, es);
+        //    k--;
+        //}
 
         ap_ufixed<m_fbits + 1, 2> rfrac = round_to(frac, m_fbits - 1);
 
-        /*
+
         // round to nearest
-        ap_ufixed<fbits + 1, 2> rfrac = frac;
-        if (frac[fbits * 2 - 3 - (fbits - 1)] == 1)
-        {
-            ap_ufixed<fbits, 1> one = 0;
-            one[0] = 1;
-            // if(pmantissa[0] == 0)
-            rfrac += one;
-            // pmantissa[0] = 1;
-        }
-        */
+       // ap_ufixed<fbits + 1, 2> rfrac = frac;
+       // if (frac[fbits * 2 - 3 - (fbits - 1)] == 1)
+       // {
+       //     ap_ufixed<fbits, 1> one = 0;
+       //     one[0] = 1;
+       //     // if(pmantissa[0] == 0)
+       //     rfrac += one;
+       //     // pmantissa[0] = 1;
+        //}
+
 
         // normalize fraction (again)
         if (rfrac >= 2)
@@ -478,6 +516,7 @@ public:
 
         return out;
     }
+    */
 
     posit_unpacked operator-() const
     {
@@ -487,11 +526,13 @@ public:
         result.sign_ = !sign_;
         result.exp_ = exp_;
         result.k_ = k_;
-        result.frac_ = frac_;
+        result.mant_ = mant_;
 
         return result;
     }
 
+    bool zero_;
+    bool inf_;
     bool sign_;
     // the max amount of bits for r is nbits-1 bits, nbits-2 bits beeing 0 (or 1), and the last beeing 1 (or 0)
     // k is the amount of counted bits
@@ -499,7 +540,7 @@ public:
     ap_int<m_kbits> k_;
     ap_uint<ebits> exp_;
     // the max amount of bits for frac is nbits - 1 (sign) - 2 (min bits for k) - es;
-    ap_ufixed<m_fbits + 1, 1> frac_;
+    ap_uint<m_fbits> mant_;
 };
 
 template <int nbits, int ebits>
@@ -707,17 +748,17 @@ public:
 
     Posit()
     {
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
     }
 
     Posit(const Posit &other)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         bits_ = other.bits_;
     }
@@ -725,9 +766,9 @@ public:
     Posit &operator=(const Posit &other)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         bits_ = other.bits_;
         /*
@@ -742,79 +783,21 @@ public:
     Posit(int c)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         bool psign = c < 0;
+        ap_uint<32> i = hls::abs(c);
+        int lz = count_leading_zeros(i);
+        i = i << (lz + 1);
 
-        // mantissa is just zeros
-        ap_ufixed<fbits * 2, fbits> pmantissa;
-        int fexponent;
+        posit_unpacked<nbits, ebits> unpacked;
 
-        if (c == 0)
-        {
-            pmantissa = 0.0;
-            fexponent = 0;
-        }
-        else
-        {
-            // pmantissa[1] = 1.0;
-            fexponent = 0;
-            pmantissa = hls::abs(c);
-            while (pmantissa >= 2.0)
-            {
-                pmantissa = pmantissa >> 1;
-                fexponent++;
-            }
-        }
-
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-
-        unpacked.setKEFromTotalExp(fexponent);
+        unpacked.setKEFromTotalExp(lz);
 
         unpacked.sign = psign;
-        unpacked.frac = pmantissa;
-
-        bits_ = unpacked.template encode<nbits, ebits>();
-    }
-
-    Posit(unsigned int c)
-    {
-        // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
-
-        bool psign = c < 0;
-
-        // mantissa is just zeros
-        ap_ufixed<fbits * 2, fbits> pmantissa;
-        int fexponent;
-
-        if (c == 0)
-        {
-            pmantissa = 0.0;
-            fexponent = 0;
-        }
-        else
-        {
-            // pmantissa[1] = 1.0;
-            fexponent = 0;
-            pmantissa = hls::abs(c);
-            while (pmantissa >= 2.0)
-            {
-                pmantissa = pmantissa >> 1;
-                fexponent++;
-            }
-        }
-
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-
-        unpacked.setKEFromTotalExp(fexponent);
-
-        unpacked.sign = psign;
-        unpacked.frac = pmantissa;
+        unpacked.frac = i;
 
         bits_ = unpacked.template encode<nbits, ebits>();
     }
@@ -822,66 +805,57 @@ public:
     Posit(float c)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         // ap_uint<32> bits = *reinterpret_cast<ap_uint<32> *>(&c);
         ap_uint<32> bits = bitcast_u32(c);
 
         FloatXUnpacked<8, 23> float_unpacked;
         float_unpacked.decode(bits);
-        FloatXUnpacked<ebits, fbits> floatx_unpacked(float_unpacked);
 
-        posit_unpacked<nbits, ebits> unpacked;
+        posit_unpacked<nbits, ebits> unpacked(float_unpacked);
 
-        unpacked.setKEFromTotalExp(floatx_unpacked.exp_);
-        unpacked.sign_ = floatx_unpacked.sign_;
-        unpacked.frac_ = floatx_unpacked.mant_;
-
-        bits_ = unpacked.template encode<nbits, ebits>();
+        bits_ = unpacked.encode();
     }
 
     Posit(double c)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         // ap_uint<64> bits = *reinterpret_cast<ap_uint<64> *>(&c);
         ap_uint<64> bits = bitcast_u64(c);
 
         FloatXUnpacked<11, 52> double_unpacked;
         double_unpacked.decode(bits);
-        FloatXUnpacked<ebits, fbits> floatx_unpacked(double_unpacked);
 
-        posit_unpacked<kbits, ebits, fbits> unpacked;
+        posit_unpacked<nbits, ebits> unpacked(double_unpacked);
 
-        unpacked.setKEFromTotalExp(floatx_unpacked.exp_);
-        unpacked.sign_ = floatx_unpacked.sign_;
-        unpacked.frac_ = floatx_unpacked.mant_;
-
-        bits_ = encode<nbits, ebits, kbits, ebits, fbits>(unpacked);
+        bits_ = unpacked.encode();
     }
 
     Posit(const posit_unpacked<nbits, ebits> &c)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
-        bits_ = encode<nbits, ebits, kbits, ebits, fbits>(c);
+        bits_ = c.encode();
     }
 
+    /*
     template <int fnbits, int fibits>
     Posit(ap_fixed<fnbits, fibits> c)
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         bool fsign = c >= 0 ? 0 : 1;
         int fexponent = hls::log2(c(fnbits - 1, fnbits - fibits));
@@ -909,16 +883,17 @@ public:
 
         bits_ = unpacked.encode();
     }
+    */
 
     operator int() const
     {
         // #pragma HLS INLINE
 
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-        unpacked.template decode<nbits, ebits>(bits_);
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
 
         int exp = unpacked.getTotalExp();
-        int res = ap_ufixed<fbits * 2, fbits>(unpacked.frac) << exp;
+        int res = (ap_uint<2>(0b01), unpacked.frac) << exp;
         if (unpacked.sign)
         {
             res = -res;
@@ -930,11 +905,11 @@ public:
     {
         // #pragma HLS INLINE
 
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-        unpacked.template decode<nbits, ebits>(bits_);
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
 
         int exp = unpacked.getTotalExp();
-        int res = ap_fixed<fbits * 2, fbits>(unpacked.frac) << exp;
+        int res = (ap_uint<2>(0b01), unpacked.frac) << exp;
         return res;
     }
 
@@ -942,15 +917,15 @@ public:
     {
         // #pragma HLS INLINE
 
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-        unpacked.template decode<nbits, ebits>(bits_);
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
 
-        FloatXUnpacked<ebits, fbits> floatx_unpacked;
+        FloatXUnpacked<8, 23> floatx_unpacked;
+        floatx_unpacked.zero_ = unpacked.zero_;
+        floatx_unpacked.inf_ = unpacked.inf_;
         floatx_unpacked.sign_ = unpacked.sign_;
-        floatx_unpacked.exp_ = unpacked.getTotalExp();
+        floatx_unpacked.exp_ = unpacked.getTotalExp() + fbias<8>::value;
         floatx_unpacked.mant_ = unpacked.frac_;
-
-        FloatXUnpacked<8, 23> float_unpacked(floatx_unpacked);
 
         ap_uint<32> bits = floatx_unpacked.encode();
 
@@ -961,15 +936,15 @@ public:
     {
         // #pragma HLS INLINE
 
-        posit_unpacked<kbits, ebits, fbits> unpacked;
-        unpacked.template decode<nbits, ebits>(bits_);
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
 
-        FloatXUnpacked<ebits, fbits> floatx_unpacked;
+        FloatXUnpacked<11, 52> floatx_unpacked;
+        floatx_unpacked.zero_ = unpacked.zero_;
+        floatx_unpacked.inf_ = unpacked.inf_;
         floatx_unpacked.sign_ = unpacked.sign_;
-        floatx_unpacked.exp_ = unpacked.getTotalExp();
-        floatx_unpacked.mant_ = unpacked.frac_;
-
-        FloatXUnpacked<11, 52> float_unpacked(floatx_unpacked);
+        floatx_unpacked.exp_ = unpacked.getTotalExp() + fbias<11>::value;
+        floatx_unpacked.mant_ = unpacked.mant_;
 
         ap_uint<64> bits = floatx_unpacked.encode();
 
@@ -985,6 +960,7 @@ public:
         return unpacked;
     }
 
+    /*
     template <int fnbits, int fibits>
     operator ap_fixed<fnbits, fibits>() const
     {
@@ -1008,6 +984,7 @@ public:
             return res;
         }
     }
+    */
     /*
     Posit operator-() const
     {
@@ -1156,7 +1133,7 @@ public:
     posit_unpacked<nbits, ebits> operator*(const posit_unpacked<nbits, ebits> &rhs) const
     {
         // #pragma HLS INLINE
-//#pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);

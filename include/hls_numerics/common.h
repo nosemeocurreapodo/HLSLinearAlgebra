@@ -22,6 +22,17 @@ static inline ap_uint<32> bitcast_u32(float f)
     pun.f = f;
     return ap_uint<32>(pun.u);
 }
+static inline ap_uint<32> bitcast_u32(int i)
+{
+#pragma HLS INLINE
+    union
+    {
+        int i;
+        unsigned int u;
+    } pun;
+    pun.i = i;
+    return ap_uint<32>(pun.i);
+}
 static inline float bitcast_f32(ap_uint<32> u)
 {
 #pragma HLS INLINE
@@ -143,8 +154,8 @@ COUNT_UF_LOOP:
 }
 
 template <int nbits>
-static inline ap_int<clog2<nbits + 1>::value>
-count_leading_zeros(ap_int<nbits> bits)
+static inline ap_uint<clog2<nbits + 1>::value>
+count_leading_zeros(ap_uint<nbits> bits)
 {
 #pragma HLS INLINE
     ap_uint<clog2<nbits + 1>::value> count = 0;
