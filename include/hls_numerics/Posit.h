@@ -99,7 +99,7 @@ public:
         return floatx_unpacked;
     }
 
-    ap_uint<nbits> encode() const
+    ap_uint<nbits> encode_old() const
     {
         // #pragma HLS INLINE off      // <- do NOT inline this hardware
         // #pragma HLS PIPELINE II = 1 // pipeline so a single instance can accept 1/cycle
@@ -173,6 +173,211 @@ public:
             }
         }
 
+        return bits;
+    }
+
+    ap_uint<nbits> encode__() const
+    {
+        // #pragma HLS INLINE
+
+        if (zero_)
+            return 0;
+
+        ap_uint<nbits> bits = 0;
+
+        const bool reg_bit = (k_ >= 0) ? 0 : 1;
+        const int reg_len = (k_ >= 0) ? int(k_ + 1) : int(-k_);
+
+        // available bits after sign
+        const int payload_bits = nbits - 1;
+
+        // regime consumes reg_len identical bits + terminating opposite bit
+        const int regime_total = reg_len + 1;
+
+        // saturate if regime alone fills everything
+        if (regime_total >= payload_bits)
+        {
+            bits[nbits - 1] = sign_;
+
+            // fill all remaining bits with regime run
+            for (int i = 0; i < nbits - 1; i++)
+            {
+#pragma HLS UNROLL
+                bits[i] = reg_bit;
+            }
+
+            return bits;
+        }
+
+        bits[nbits - 1] = sign_;
+
+        // ------------------------------------------------------------------
+        // Build payload = regime || exponent || mantissa
+        // payload is packed right-aligned first, then shifted into position.
+        // ------------------------------------------------------------------
+        ap_uint<nbits - 1> payload = 0;
+        int wr_pos = payload_bits - 1;
+
+        // regime run
+        for (int i = 0; i < reg_len; i++)
+        {
+#pragma HLS UNROLL
+            payload[wr_pos - i] = reg_bit;
+        }
+        wr_pos -= reg_len;
+
+        // terminating regime bit
+        payload[wr_pos] = !reg_bit;
+        wr_pos--;
+
+        // exponent bits, MSB first
+        for (int i = ebits - 1; i >= 0; i--)
+        {
+#pragma HLS UNROLL
+            if (wr_pos >= 0)
+            {
+                payload[wr_pos] = exp_[i];
+                wr_pos--;
+            }
+        }
+
+        // mantissa bits, MSB first
+        for (int i = m_fbits - 1; i >= 0; i--)
+        {
+#pragma HLS UNROLL
+            if (wr_pos >= 0)
+            {
+                payload[wr_pos] = mant_[i];
+                wr_pos--;
+            }
+        }
+
+        bits(nbits - 2, 0) = payload;
+        return bits;
+    }
+
+    ap_uint<nbits> encode_() const
+    {
+        // #pragma HLS INLINE
+
+        if (zero_)
+            return 0;
+
+        ap_uint<nbits> bits = 0;
+        bits[nbits - 1] = sign_;
+
+        const bool reg_bit = (k_ < 0);
+        const int reg_len = (k_ >= 0) ? int(k_ + 1) : int(-k_);
+        const int max_payload = nbits - 1;
+
+        // regime saturation
+        if (reg_len + 1 >= max_payload)
+        {
+            for (int i = 0; i < max_payload; ++i)
+            {
+#pragma HLS UNROLL
+                bits[i] = reg_bit;
+            }
+            return bits;
+        }
+
+        int pos = nbits - 2;
+
+        // regime run
+        for (int i = 0; i < reg_len; ++i)
+        {
+#pragma HLS UNROLL
+            bits[pos--] = reg_bit;
+        }
+
+        // regime termination
+        bits[pos--] = !reg_bit;
+
+        // exponent
+        for (int i = ebits - 1; i >= 0; --i)
+        {
+#pragma HLS UNROLL
+            if (pos >= 0)
+                bits[pos--] = exp_[i];
+        }
+
+        // mantissa
+        for (int i = m_fbits - 1; i >= 0; --i)
+        {
+#pragma HLS UNROLL
+            if (pos >= 0)
+                bits[pos--] = mant_[i];
+        }
+
+        return bits;
+    }
+
+    ap_uint<nbits> encode() const
+    {
+        // #pragma HLS INLINE
+
+        if (zero_)
+            return 0;
+
+        ap_uint<nbits> bits = 0;
+        bits[nbits - 1] = sign_;
+
+        static constexpr int payload_bits = nbits - 1;
+        static constexpr int ef_bits = ebits + m_fbits;
+
+        bool reg_s = (k_ < 0);
+        ap_uint<m_kbits + 1> reg_len = (k_ >= 0) ? ap_uint<m_kbits + 1>(k_ + 1)
+                                                 : ap_uint<m_kbits + 1>(-k_);
+        ap_uint<m_kbits + 2> reg_total = reg_len + 1;
+
+        // Saturation: regime fills all payload
+        if (reg_total >= payload_bits)
+        {
+            bits[nbits - 2] = reg_s;
+            if (reg_s)
+            {
+                // 000...0 pattern after sign, except final structure is all zeros
+                bits(nbits - 2, 0) = 0;
+            }
+            else
+            {
+                // 111...1 pattern after sign
+                bits(nbits - 2, 0) = ~ap_uint<payload_bits>(0);
+            }
+            return bits;
+        }
+
+        ap_uint<payload_bits> regime = 0;
+
+        if (!reg_s)
+        {
+            // k >= 0 : regime = 111...110
+            ap_uint<payload_bits> ones = (((ap_uint<payload_bits>)1 << reg_len) - 1);
+            regime = ones << (payload_bits - reg_len);
+        }
+        else
+        {
+            // k < 0 : regime = 000...001
+            regime = (ap_uint<payload_bits>)1 << (payload_bits - reg_total);
+        }
+
+        // exponent+fraction payload, MSB aligned just after regime
+        ap_uint<ef_bits> ef = (exp_, mant_);
+
+        ap_uint<payload_bits> ef_field = 0;
+        int frac_shift = payload_bits - reg_total - ef_bits;
+
+        if (frac_shift >= 0)
+        {
+            ef_field = (ap_uint<payload_bits>)ef << frac_shift;
+        }
+        else
+        {
+            // truncate low bits if not enough room
+            ef_field = (ap_uint<payload_bits>)(ef >> (-frac_shift));
+        }
+
+        bits(nbits - 2, 0) = regime | ef_field;
         return bits;
     }
 
