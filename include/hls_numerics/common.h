@@ -154,11 +154,11 @@ COUNT_UF_LOOP:
 }
 
 template <int nbits>
-static inline ap_uint<clog2<nbits + 1>::value>
+static inline ap_uint<clog2<nbits>::value>
 count_leading_zeros(ap_uint<nbits> bits)
 {
 #pragma HLS INLINE
-    ap_uint<clog2<nbits + 1>::value> count = 0;
+    ap_uint<clog2<nbits>::value> count = 0;
 
 COUNT_UF_LOOP:
     for (int i = nbits - 1; i >= 0; --i)

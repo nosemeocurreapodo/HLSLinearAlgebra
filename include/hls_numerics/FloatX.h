@@ -16,6 +16,11 @@ public:
     {
     }
 
+    FloatXUnpacked(const ap_uint<nbits> &c)
+    {
+        decode(c);
+    }
+
     // FloatXUnpacked(const FloatXUnpacked &other)
     //{
     //     // #pragma HLS INLINE
@@ -26,7 +31,7 @@ public:
     template <int oebits, int ofbits>
     FloatXUnpacked(const FloatXUnpacked<oebits, ofbits> &other)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<oebits + 1> oexp = (ap_int<oebits + 1>)(ap_uint<1>(0), other.exp_) - (ap_int<oebits + 1>)fbias<oebits>::value;
         ap_int<ebits + 1> exp = oexp + (ap_int<ebits + 1>)fbias<ebits>::value;
@@ -73,7 +78,7 @@ public:
 
     void decode(const ap_uint<nbits> &bits)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits == 0)
             zero_ = 1;
@@ -84,15 +89,15 @@ public:
         exp_ = bits(nbits - 2, fbits);
         mant_ = bits(fbits - 1, 0);
 
-        if (exp_ == ap_uint<ebits>(-1) && mant_ == 0)
-            inf_ = 1;
-        else
-            inf_ = 0;
+        // if (exp_ == ap_uint<ebits>(-1) && mant_ == 0)
+        //     inf_ = 1;
+        // else
+        //     inf_ = 0;
     }
 
     ap_uint<nbits> encode() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_uint<nbits> bits;
 
@@ -112,11 +117,13 @@ public:
 
     FloatXUnpacked operator+(const FloatXUnpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
-        if (zero_ == 1)
+        // if (sign_ == 0 && exp_ == 0 && mant_ == 0)
+        if (zero_)
             return rhs;
-        if (rhs.zero_ == 1)
+        // if (rhs.sign_ == 0 && rhs.exp_ == 0 && rhs.mant_ == 0)
+        if (rhs.zero_)
             return *this;
 
         /*
@@ -163,7 +170,6 @@ public:
 
         ap_uint<fbits + 2> frac1 = (ap_uint<1>(1), in1.mant_, ap_uint<1>(0));
         ap_uint<fbits + 2> frac2 = (ap_uint<1>(1), in2.mant_, ap_uint<1>(0));
-
         frac2 = frac2 >> diff_texp;
 
         // do addition (result is sure to be positive)
@@ -173,6 +179,12 @@ public:
             frac = frac1 + frac2;
         else
             frac = frac1 - frac2;
+
+        // if (in1.sign_ != in2.sign_)
+        //     frac2 = -frac2;
+
+        // frac = frac1 + frac2;
+
         // #pragma HLS BIND_OP variable = frac op = add impl = dsp latency = -1
 
         if (frac == 0)
@@ -185,23 +197,13 @@ public:
         }
 
         // normalize
-        int shift = count_leading_zeros(frac) - 1;
+        ap_uint<clog2<nbits>::value> lz = count_leading_zeros(frac);
 
-        if (shift > 0)
-        {
-            frac = frac << shift;
-        }
-        if (shift < 0)
-        {
-            frac = frac >> -shift;
-        }
-
-        in1.exp_ = in1.exp_ - shift;
+        in1.exp_ = in1.exp_ - lz + 1;
 
         // round
-
         // if (frac[0] == 1)
-        //     frac += 1;
+        //     frac += 2;
 
         // if (frac[fbits + 2] == 1)
         //{
@@ -209,7 +211,8 @@ public:
         //     exp++;
         // }
 
-        in1.mant_ = frac(fbits, 1);
+        frac = frac << lz;
+        in1.mant_ = frac(fbits + 1, 2);
 
         return in1;
     }
@@ -530,7 +533,7 @@ public:
 
     FloatX(float c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         // ap_uint<32> bits = *reinterpret_cast<ap_uint<32> *>(&c);
         ap_uint<32> bits = bitcast_u32(c);
@@ -542,7 +545,7 @@ public:
 
     FloatX(double c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         // ap_uint<64> bits = *reinterpret_cast<ap_uint<64> *>(&c);
         ap_uint<64> bits = bitcast_u64(c);
@@ -554,14 +557,14 @@ public:
 
     FloatX(const FloatXUnpacked<ebits, fbits> &c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         bits_ = c.encode();
     }
 
     operator float() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         FloatXUnpacked<ebits, fbits> floatx_unpacked;
         floatx_unpacked.decode(bits_);
@@ -575,7 +578,7 @@ public:
 
     operator double() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         FloatXUnpacked<ebits, fbits> floatx_unpacked;
         floatx_unpacked.decode(bits_);
@@ -589,7 +592,7 @@ public:
 
     operator FloatXUnpacked<ebits, fbits>() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         FloatXUnpacked<ebits, fbits> unpacked;
         unpacked.decode(bits_);
@@ -598,7 +601,7 @@ public:
 
     FloatXUnpacked<ebits, fbits> operator+(const FloatXUnpacked<ebits, fbits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         FloatXUnpacked<ebits, fbits> in1;
         in1.decode(bits_);
