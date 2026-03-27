@@ -503,11 +503,31 @@ public:
         return result;
     }
 
+    bool operator==(const FloatXUnpacked &rhs)
+    {
+        if (sign_ != rhs.sign_)
+        {
+            return false;
+        }
+
+        if (exp_ != rhs.exp_)
+        {
+            return false;
+        }
+
+        if (mant_ != rhs.mant_)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     bool operator<(const FloatXUnpacked &rhs) const
     {
-        if(zero_)
+        if (zero_)
         {
-            if(rhs.zero_)
+            if (rhs.zero_)
                 return false;
             else
                 return rhs.sign_;
@@ -523,7 +543,7 @@ public:
             return sign_ != (exp_ < rhs.exp_);
         }
 
-        if (mant_ != rhs.mat_)
+        if (mant_ != rhs.mant_)
         {
             return sign_ != (mant_ < rhs.mant_);
         }
@@ -721,11 +741,57 @@ public:
         return -res;
     }
 
+    FloatX &operator*=(const FloatXUnpacked<ebits, fbits> &rhs)
+    {
+        FloatXUnpacked<ebits, fbits> res;
+        res.decode(bits_);
+        res = res * rhs;
+        bits_ = res.encode();
+        return *this;
+    }
+
+    FloatX &operator+=(const FloatXUnpacked<ebits, fbits> &rhs)
+    {
+        FloatXUnpacked<ebits, fbits> res;
+        res.decode(bits_);
+        res = res + rhs;
+        bits_ = res.encode();
+        return *this;
+    }
+
+    bool operator==(const FloatXUnpacked<ebits, fbits> &rhs) const
+    {
+        FloatXUnpacked<ebits, fbits> unpacked;
+        unpacked.decode(bits_);
+        return unpacked == rhs;
+    }
+
     bool operator<(const FloatXUnpacked<ebits, fbits> &rhs) const
     {
         FloatXUnpacked<ebits, fbits> unpacked;
         unpacked.decode(bits_);
         return unpacked < rhs;
+    }
+
+    bool operator>(const FloatXUnpacked<ebits, fbits> &rhs) const
+    {
+        FloatXUnpacked<ebits, fbits> unpacked;
+        unpacked.decode(bits_);
+        return rhs < unpacked;
+    }
+
+    bool operator<=(const FloatXUnpacked<ebits, fbits> &rhs) const
+    {
+        FloatXUnpacked<ebits, fbits> unpacked;
+        unpacked.decode(bits_);
+        return unpacked == rhs || unpacked < rhs;
+    }
+
+    bool operator>=(const FloatXUnpacked<ebits, fbits> &rhs) const
+    {
+        FloatXUnpacked<ebits, fbits> unpacked;
+        unpacked.decode(bits_);
+        return unpacked == rhs || rhs < unpacked;
     }
 
 private:
