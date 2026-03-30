@@ -8,7 +8,8 @@
 // #define HLS_PIPELINE HLS_PRAGMA(HLS PIPELINE)
 // #define HLS_ARRAY_PARTITION(var, type, dim) HLS_PRAGMA(HLS ARRAY_PARTITION variable = var type = type dim = dim)
 #include "hls_math.h"
-namespace math = hls;
+//namespace math = hls;
+using namespace hls;
 #else
 // #define HLS_PRAGMA(x)
 // #define HLS_INLINE
@@ -16,7 +17,8 @@ namespace math = hls;
 // #define HLS_PIPELINE
 // #define HLS_ARRAY_PARTITION(var, type, dim)
 #include <cmath>
-namespace math = std;
+//namespace math = std;
+using namespace std;
 #endif
 
 #include "common.h"
@@ -295,9 +297,10 @@ namespace linalg
             mat_norm_loop_r:
                 for (int r = 0; r < _rows; r++)
                     sum += (*this)(r, c) * (*this)(r, c);
-            return math::sqrt(sum);
+            return sqrt(sum);
         }
 
+        /*
         Mat sqrt() const
         {
             Mat result;
@@ -305,9 +308,10 @@ namespace linalg
             for (int c = 0; c < _cols; c++)
             mat_sqrt_loop_r:
                 for (int r = 0; r < _rows; r++)
-                    result(r, c) = math::sqrt((*this)(r, c));
+                    result(r, c) = sqrt((*this)(r, c));
             return result;
         }
+        */
 
         // Element accessors (row, col)
         Type &operator()(int r, int c)
@@ -482,7 +486,7 @@ namespace linalg
             Type acc = Type(0);
             for (int i = 0; i < Size; i++)
                 acc += (*this)(i) * (*this)(i);
-            return math::sqrt(acc);
+            return sqrt(acc);
         }
     };
     /*
@@ -1115,7 +1119,7 @@ namespace linalg
 
             if (trace > Type(0))
             {
-                Type s = math::sqrt(trace + Type(1)) * Type(2); // s = 4 * qw
+                Type s = sqrt(trace + Type(1)) * Type(2); // s = 4 * qw
                 quaternion_.w() = Type(0.25) * s;
                 quaternion_.x() = (R(2, 1) - R(1, 2)) / s;
                 quaternion_.y() = (R(0, 2) - R(2, 0)) / s;
@@ -1123,7 +1127,7 @@ namespace linalg
             }
             else if (R(0, 0) > R(1, 1) && R(0, 0) > R(2, 2))
             {
-                Type s = math::sqrt(Type(1) + R(0, 0) - R(1, 1) - R(2, 2)) * Type(2); // s = 4 * qx
+                Type s = sqrt(Type(1) + R(0, 0) - R(1, 1) - R(2, 2)) * Type(2); // s = 4 * qx
                 quaternion_.w() = (R(2, 1) - R(1, 2)) / s;
                 quaternion_.x() = Type(0.25) * s;
                 quaternion_.y() = (R(0, 1) + R(1, 0)) / s;
@@ -1131,7 +1135,7 @@ namespace linalg
             }
             else if (R(1, 1) > R(2, 2))
             {
-                Type s = math::sqrt(Type(1) + R(1, 1) - R(0, 0) - R(2, 2)) * Type(2); // s = 4 * qy
+                Type s = sqrt(Type(1) + R(1, 1) - R(0, 0) - R(2, 2)) * Type(2); // s = 4 * qy
                 quaternion_.w() = (R(0, 2) - R(2, 0)) / s;
                 quaternion_.x() = (R(0, 1) + R(1, 0)) / s;
                 quaternion_.y() = Type(0.25) * s;
@@ -1139,7 +1143,7 @@ namespace linalg
             }
             else
             {
-                Type s = math::sqrt(Type(1) + R(2, 2) - R(0, 0) - R(1, 1)) * Type(2); // s = 4 * qz
+                Type s = sqrt(Type(1) + R(2, 2) - R(0, 0) - R(1, 1)) * Type(2); // s = 4 * qz
                 quaternion_.w() = (R(1, 0) - R(0, 1)) / s;
                 quaternion_.x() = (R(0, 2) + R(2, 0)) / s;
                 quaternion_.y() = (R(1, 2) + R(2, 1)) / s;
@@ -1185,8 +1189,8 @@ namespace linalg
             }
 
             Vec3<Type> axis = (phi / angle);
-            Type s = math::sin(angle);
-            Type c = math::cos(angle);
+            Type s = sin(angle);
+            Type c = cos(angle);
 
             // Rodrigues' formula: R = I c + (1-c) (axis axis^T) + [axis]_x s
             Mat3<Type> R = Mat3<Type>::Identity() * c + outerProduct(axis, axis) * (Type(1) - c) + wedge(axis) * s;
@@ -1204,7 +1208,7 @@ namespace linalg
             Type qz = q.z();
 
             // Vector part magnitude = sin(theta/2)
-            Type sin_half_theta = math::sqrt(qx * qx + qy * qy + qz * qz);
+            Type sin_half_theta = sqrt(qx * qx + qy * qy + qz * qz);
 
             // Handle the small-angle case separately to avoid division by zero
             const Type eps = Type(1e-12);
@@ -1218,7 +1222,7 @@ namespace linalg
 
             // General case
             // theta = 2 * atan2(||v||, w)
-            Type theta = Type(2) * math::atan2(sin_half_theta, qw);
+            Type theta = Type(2) * atan2(sin_half_theta, qw);
 
             // Axis = v / sin(theta/2)
             // phi = theta * axis = theta / sin(theta/2) * v
@@ -1342,8 +1346,8 @@ namespace linalg
         }
 
         Vec3<Type> axis = (phi / angle);
-        Type s = math::sin(angle);
-        Type c = math::cos(angle);
+        Type s = sin(angle);
+        Type c = cos(angle);
 
         Mat3<Type> I = Mat3<Type>::Identity();
         Mat3<Type> K = wedge(axis);

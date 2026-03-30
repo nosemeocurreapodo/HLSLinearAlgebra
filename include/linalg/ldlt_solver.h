@@ -54,7 +54,7 @@ namespace linalg
                 }
                 D_(i, 0) = sum;
 
-                if (math::fabs(D_(i, 0)) < Type(1e-12))
+                if (fabs(D_(i, 0)) < Type(1e-12))
                 {
                     // Matrix is not positive definite or is singular.
                     // A robust implementation would throw or return an error.

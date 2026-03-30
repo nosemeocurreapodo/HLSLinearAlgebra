@@ -176,7 +176,7 @@ public:
         return bits;
     }
 
-    ap_uint<nbits> encode__() const
+    ap_uint<nbits> encode1() const
     {
         // #pragma HLS INLINE
 
@@ -256,7 +256,7 @@ public:
         return bits;
     }
 
-    ap_uint<nbits> encode_() const
+    ap_uint<nbits> encode() const
     {
         // #pragma HLS INLINE
 
@@ -267,9 +267,10 @@ public:
         bits[nbits - 1] = sign_;
 
         const bool reg_bit = (k_ < 0);
-        const int reg_len = (k_ >= 0) ? int(k_ + 1) : int(-k_);
-        const int max_payload = nbits - 1;
+        const int reg_len = hls::min((k_ >= 0) ? int(k_ + 1) : int(-k_), nbits - 2);
+        // const int max_payload = nbits - 1;
 
+        /*
         // regime saturation
         if (reg_len + 1 >= max_payload)
         {
@@ -280,19 +281,24 @@ public:
             }
             return bits;
         }
+        */
+        // int pos = nbits - 2;
 
-        int pos = nbits - 2;
-
+        bits(nbits - 2, nbits - 1 - reg_len) = reg_bit;
+        /*
         // regime run
         for (int i = 0; i < reg_len; ++i)
         {
 #pragma HLS UNROLL
             bits[pos--] = reg_bit;
         }
+        */
 
         // regime termination
-        bits[pos--] = !reg_bit;
+        // bits[pos--] = !reg_bit;
+        bits[nbits - 2 - reg_len] = !reg_bit;
 
+        int pos = nbits - 3 - reg_len;
         // exponent
         for (int i = ebits - 1; i >= 0; --i)
         {
@@ -312,7 +318,7 @@ public:
         return bits;
     }
 
-    ap_uint<nbits> encode() const
+    ap_uint<nbits> encode3() const
     {
         // #pragma HLS INLINE
 
