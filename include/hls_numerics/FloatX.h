@@ -30,6 +30,64 @@ public:
     //     bits_ = other.bits_;
     // }
 
+    /*
+    FloatXUnpacked(float c)
+    {
+#pragma HLS INLINE off
+
+        // ap_uint<32> bits = *reinterpret_cast<ap_uint<32> *>(&c);
+        ap_uint<32> bits = bitcast_u32(c);
+        FloatXUnpacked<8, 23> float_unpacked;
+        float_unpacked.decode(bits);
+        FloatXUnpacked<ebits, fbits> floatx_unpacked(float_unpacked);
+        bits_ = floatx_unpacked.encode();
+    }
+    */
+
+    FloatXUnpacked(int c)
+    {
+        bool psign = c < 0;
+        ap_uint<32> i = hls::abs(c);
+        int lz = count_leading_zeros(i);
+        i = i << (lz + 1);
+
+        sign_ = psign;
+        exp_ = lz;
+        mant_ = i;
+    }
+
+    FloatXUnpacked(unsigned int c)
+    {
+        ap_uint<32> i = c;
+        int lz = count_leading_zeros(i);
+        i = i << (lz + 1);
+
+        sign_ = 0;
+        exp_ = lz;
+        mant_ = i;
+    }
+
+    operator int() const
+    {
+        if (zero_ == 0)
+            return 0;
+
+        int exp = exp_ - fbias<ebits>::value;
+        int res = (ap_uint<2>(0b01), mant_) << exp;
+        if (sign_)
+        {
+            res = -res;
+        }
+        return res;
+    }
+
+    operator unsigned int() const
+    {
+        int exp = exp_ - fbias<ebits>::value;
+        int res = (ap_uint<2>(0b01), mant_) << exp;
+        return res;
+    }
+
     template <int oebits, int ofbits>
     FloatXUnpacked(const FloatXUnpacked<oebits, ofbits> &other)
     {
@@ -558,6 +616,52 @@ public:
     bool inf_;
 };
 
+template <int ebits, int fbits>
+FloatXUnpacked<ebits, fbits> floor(const FloatXUnpacked<ebits, fbits> &a)
+{
+    FloatXUnpacked<ebits, fbits> unpacked = a;
+    ap_int<ebits + 1> exp = unpacked.exp_ - fbias<ebits>::value;
+    if (exp < 0)
+    {
+        unpacked.zero_ = 1;
+    }
+    if (unpacked.sign_)
+    {
+        unpacked.mant_ -= 1;
+    }
+    unpacked.mant_[fbits - 1 - exp, 0] = 0;
+    return unpacked;
+}
+
+template <int ebits, int fbits>
+FloatXUnpacked<ebits, fbits> ceil(const FloatXUnpacked<ebits, fbits> &a)
+{
+    return floor(a);
+}
+
+template <int ebits, int fbits>
+FloatXUnpacked<ebits, fbits> lround(const FloatXUnpacked<ebits, fbits> &a)
+{
+    // return hls::lround(a);
+    // return RealType(int(a + (a >= RealType(0) ? RealType(0.5) : RealType(-0.5))));
+    //  return static_cast<T>(static_cast<long>(a + (a >= 0 ? 0.5 : -0.5)));
+    return a;
+}
+
+template <int ebits, int fbits>
+FloatXUnpacked<ebits, fbits> fmod(const FloatXUnpacked<ebits, fbits> &a, const FloatXUnpacked<ebits, fbits> &b)
+{
+    // return hls::fmod(a, b);
+    return a - b * floor(a / b);
+}
+
+template <int ebits, int fbits>
+FloatXUnpacked<ebits, fbits> fexp(const FloatXUnpacked<ebits, fbits> &a)
+{
+    // return hls::exp(a);
+    return a;
+}
+
 template <int nbits, int ebits>
 class FloatX
 {
@@ -588,22 +692,13 @@ public:
 
     FloatX(int c)
     {
-        // #pragma HLS INLINE
-        // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
-        // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
-        // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
+        FloatXUnpacked<ebits, fbits> float_unpacked(c);
+        bits_ = float_unpacked.encode();
+    }
 
-        bool psign = c < 0;
-        ap_uint<32> i = hls::abs(c);
-        int lz = count_leading_zeros(i);
-        i = i << (lz + 1);
-
-        FloatXUnpacked<ebits, fbits> float_unpacked;
-
-        float_unpacked.sign_ = psign;
-        float_unpacked.exp_ = lz;
-        float_unpacked.mant_ = i;
-
+    FloatX(unsigned int c)
+    {
+        FloatXUnpacked<ebits, fbits> float_unpacked(c);
         bits_ = float_unpacked.encode();
     }
 
@@ -646,13 +741,7 @@ public:
         FloatXUnpacked<ebits, fbits> floatx_unpacked;
         floatx_unpacked.decode(bits_);
 
-        int exp = floatx_unpacked.exp_ - fbias<ebits>::value;
-        int res = (ap_uint<2>(0b01), floatx_unpacked.mant_) << exp;
-        if (floatx_unpacked.sign_)
-        {
-            res = -res;
-        }
-        return res;
+        return int(floatx_unpacked);
     }
 
     operator float() const
@@ -797,3 +886,12 @@ public:
 private:
     ap_uint<nbits> bits_;
 };
+
+template <int nbits, int ebits>
+FloatX<nbits, ebits> lround(const FloatX<nbits, ebits> &a)
+{
+    // return hls::lround(a);
+    // return RealType(int(a + (a >= RealType(0) ? RealType(0.5) : RealType(-0.5))));
+    //  return static_cast<T>(static_cast<long>(a + (a >= 0 ? 0.5 : -0.5)));
+    return a;
+}
