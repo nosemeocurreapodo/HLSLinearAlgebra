@@ -110,12 +110,12 @@ struct clog2
 // (ap_uint)
 // ---------------------------
 template <int nbits>
-static inline ap_uint<clog2<nbits + 1>::value>
+static inline ap_uint<clog2<nbits>::value>
 count_leading_symbol(ap_uint<nbits> bits, bool symbol)
 {
 #pragma HLS INLINE
 
-    ap_uint<clog2<nbits + 1>::value> count = 0;
+    ap_uint<clog2<nbits>::value> count = 0;
 
 COUNT_U_LOOP:
     for (int i = nbits - 1; i >= 0; --i)
@@ -135,11 +135,11 @@ COUNT_U_LOOP:
 // Treats the *bit pattern* as unsigned vector
 // ---------------------------
 template <int nbits, int ibits>
-static inline ap_uint<clog2<nbits + 1>::value>
+static inline ap_uint<clog2<nbits>::value>
 count_leading_zeros(ap_ufixed<nbits, ibits> bits)
 {
 #pragma HLS INLINE
-    ap_uint<clog2<nbits + 1>::value> count = 0;
+    ap_uint<clog2<nbits>::value> count = 0;
 
 COUNT_UF_LOOP:
     for (int i = nbits - 1; i >= 0; --i)
