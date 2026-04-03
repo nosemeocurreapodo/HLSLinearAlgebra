@@ -258,28 +258,33 @@ public:
 
     ap_uint<nbits> encode() const
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         if (zero_)
             return 0;
 
         const bool reg_bit = (k_ < 0);
         const ap_uint<m_kbits + 1> reg_len = hls::min((k_ >= 0) ? ap_uint<m_kbits + 1>(k_ + 1) : ap_uint<m_kbits + 1>(-k_), ap_uint<m_kbits + 1>(nbits - 1));
+        // ap_uint<m_kbits + 1> reg_len = ap_uint<m_kbits + 1>(k_ + 1);
+        // if (k_ < 0)
+        //     reg_len = ap_uint<m_kbits + 1>(-k_);
 
-        ap_uint<nbits> ones = ~ap_uint<nbits>(0);
-        // ap_uint<nbits> zeros = 0;
+        // ap_uint<nbits> ones = ~ap_uint<nbits>(0);
+        //  ap_uint<nbits> zeros = 0;
 
         const int end_exp_map_bits = 1 + ebits + m_fbits;
-        ap_uint<end_exp_map_bits> end_exp_mant = (!reg_bit, exp_, mant_);
+        // const int end_bit = nbits - 1 - reg_len;
+
+        const ap_uint<end_exp_map_bits> end_exp_mant = (!reg_bit, exp_, mant_);
 
         ap_uint<nbits> bits = 0;
 
         bits[nbits - 1] = sign_;
 
         if (reg_bit)
-            bits(nbits - 2, nbits - 1 - reg_len) = ones(nbits - 2, nbits - 1 - reg_len);
+            bits(nbits - 2, nbits - 1 - reg_len) = -1; // ones(nbits - 2, nbits - 1 - reg_len);
         // else
-        //     bits(nbits - 2, nbits - 1 - reg_len) = zeros(nbits - 2, nbits - 1 - reg_len);
+        //     bits(nbits - 2, nbits - 1 - reg_len) = 0;
 
         if (nbits - 1 - reg_len > 0)
             bits(nbits - 2 - reg_len, 0) = end_exp_mant(end_exp_map_bits - 1, end_exp_map_bits - (nbits - 1 - reg_len));
@@ -443,7 +448,7 @@ public:
 
     void decode(const ap_uint<nbits> &bits)
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         zero_ = (bits == 0);
         sign_ = bits[nbits - 1];
@@ -458,9 +463,9 @@ public:
         const bool reg_bit = bits[nbits - 2];
 
         // Count leading run of reg_bit in payload
-        //ap_uint<nbits - 1> payload = bits(nbits - 2, 0);
-        //ap_uint<clog2<nbits - 1>::value> reg_len = count_leading_symbol(payload, reg_bit);
-        ap_uint<clog2<nbits - 1>::value> reg_len = count_leading_symbol(ap_uint<nbits - 1>(bits(nbits - 2, 0)), reg_bit);
+        // ap_uint<nbits - 1> payload = bits(nbits - 2, 0);
+        // ap_uint<clog2<nbits - 1>::value> reg_len = count_leading_symbol(payload, reg_bit);
+        const ap_uint<clog2<nbits - 1>::value> reg_len = count_leading_symbol(ap_uint<nbits - 1>(bits(nbits - 2, 0)), reg_bit);
 
         /*
         int reg_len = 0;
@@ -483,7 +488,7 @@ public:
             k_ = reg_len - 1;
 
         // Remaining bits after regime
-        ap_uint<clog2<nbits>::value> rem_bits = nbits - 1 - reg_len;
+        const ap_uint<clog2<nbits>::value> rem_bits = nbits - 1 - reg_len;
 
         // If nothing remains, exponent and mantissa stay zero
         if (rem_bits <= 0)
@@ -543,7 +548,7 @@ public:
 
     void setKEFromTotalExp(int in_exp)
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         // get k and e from floating point exponent
         // How many times each exponent over - or under - flowed the valid interval
@@ -573,7 +578,7 @@ public:
 
     posit_unpacked operator+(const posit_unpacked &rhs) const
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         // int exp1 = getTotalExp();
         // int exp2 = rhs.getTotalExp();
@@ -1105,7 +1110,7 @@ public:
 
     Posit(double c)
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
         // #pragma HLS allocation function instances = encode < nbits, ebits, kbits, ebits, fbits> limit = 1
         // #pragma HLS allocation function instances = decode < nbits, ebits, kbits, ebits, fbits> limit = 1
         // #pragma HLS allocation function instances = posit_mult < kbits, ebits, fbits> limit = 1
@@ -1212,7 +1217,7 @@ public:
 
     operator double() const
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1226,7 +1231,7 @@ public:
 
     operator posit_unpacked<nbits, ebits>() const
     {
-        #pragma HLS INLINE off
+#pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
