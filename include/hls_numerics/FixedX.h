@@ -121,6 +121,8 @@ public:
             abs_bits = -abs_bits;
         int shift = count_leading_zeros((ap_uint<nbits>)abs_bits);
 
+        abs_bits = abs_bits << (shift + 1);
+
         FloatXUnpacked<8, 23> float_unpacked;
         float_unpacked.zero_ = 0;
         float_unpacked.inf_ = 0;
@@ -129,9 +131,9 @@ public:
         float_unpacked.mant_ = 0;
 
         if (nbits <= 24)
-            float_unpacked.mant_(23, 24 - nbits) = abs_bits << (shift + 1);
+            float_unpacked.mant_(23, 24 - nbits) = abs_bits;
         else
-            float_unpacked.mant_ = abs_bits << (shift + 1);
+            float_unpacked.mant_ = abs_bits(nbits - 1, nbits - 24);
         ap_uint<32> bits = float_unpacked.encode();
 
         // float fresult = *reinterpret_cast<float *>(&bits);
@@ -147,10 +149,14 @@ public:
             return 0.0;
 
         bool sign = bits_ < 0 ? 1 : 0;
+
         ap_int<nbits> abs_bits = bits_;
+        
         if (sign)
             abs_bits = -abs_bits;
+
         int shift = count_leading_zeros((ap_uint<nbits>)abs_bits);
+        abs_bits = abs_bits << (shift + 1);
 
         FloatXUnpacked<11, 52> float_unpacked;
         float_unpacked.zero_ = 0;
@@ -160,9 +166,9 @@ public:
         float_unpacked.mant_ = 0;
 
         if (nbits <= 52)
-            float_unpacked.mant_(51, 52 - nbits) = abs_bits << (shift + 1);
+            float_unpacked.mant_(51, 52 - nbits) = abs_bits;
         else
-            float_unpacked.mant_ = abs_bits << (shift + 1);
+            float_unpacked.mant_ = abs_bits(nbits - 1, nbits - 52);
         ap_uint<64> bits = float_unpacked.encode();
 
         // float fresult = *reinterpret_cast<float *>(&bits);

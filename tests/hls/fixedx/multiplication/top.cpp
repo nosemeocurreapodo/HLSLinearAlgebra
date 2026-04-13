@@ -1,4 +1,4 @@
-#include "hls_numerics/FloatX.h"
+#include "hls_numerics/FixedX.h"
 
 extern "C" void top(double in_a, double in_b, double &out)
 {
@@ -9,9 +9,9 @@ extern "C" void top(double in_a, double in_b, double &out)
 
 #pragma HLS PIPELINE
 
-    FloatX<32, 8> fx_a(in_a);
-    FloatX<32, 8> fx_b(in_b);
-    FloatX<32, 8> res = fx_a * fx_b;
+    FixedX<32, 8> fx_a(in_a);
+    FixedX<32, 8> fx_b(in_b);
+    FixedX<32 * 2, 8 * 2> res = fx_a * fx_b;
 
     out = (double)(res);
 }
