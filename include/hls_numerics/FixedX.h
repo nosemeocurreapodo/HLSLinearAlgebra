@@ -151,7 +151,7 @@ public:
         bool sign = bits_ < 0 ? 1 : 0;
 
         ap_int<nbits> abs_bits = bits_;
-        
+
         if (sign)
             abs_bits = -abs_bits;
 
@@ -200,12 +200,13 @@ public:
         return FixedX<nbits * 2, ibits * 2>(res);
     }
 
-    FixedX<nbits * 2, ibits * 2> operator/(const FixedX &rhs) const
+    FixedX<nbits, ibits> operator/(const FixedX &rhs) const
     {
 #pragma HLS INLINE off
 
-        ap_int<nbits * 2> res = bits_ / rhs.bits_;
-        return FixedX<nbits * 2, ibits * 2>(res);
+        ap_int<nbits * 2> num = (ap_int<nbits * 2>)bits_ << fbits;
+        ap_int<nbits> res = num / rhs.bits_;
+        return FixedX<nbits, ibits>(res);
     }
 
     FixedX operator-() const
