@@ -192,6 +192,16 @@ public:
         return FixedX<nbits + 1, ibits + 1>(res);
     }
 
+    template <int in_nbits, int in_ibits>
+    FixedX<nbits + in_nbits, ibits + in_ibits> operator*(const FixedX<in_nbits, in_ibits> &rhs) const
+    {
+#pragma HLS INLINE off
+
+        ap_int<nbits + in_nbits> res = bits_ * rhs.bits_;
+        return FixedX<nbits + in_nbits, ibits + in_ibits>(res);
+    }
+
+    /*
     FixedX<nbits * 2, ibits * 2> operator*(const FixedX &rhs) const
     {
 #pragma HLS INLINE off
@@ -199,6 +209,7 @@ public:
         ap_int<nbits * 2> res = bits_ * rhs.bits_;
         return FixedX<nbits * 2, ibits * 2>(res);
     }
+    */
 
     FixedX<nbits, ibits> operator/(const FixedX &rhs) const
     {
@@ -217,13 +228,10 @@ public:
         return FixedX(res);
     }
 
-    /*
     FixedX &operator*=(const FixedX &rhs)
     {
-        FloatXUnpacked<ebits, fbits> res;
-        res.decode(bits_);
-        res = res * rhs;
-        bits_ = res.encode();
+        *this = *this * rhs;
+
         return *this;
     }
 
@@ -235,7 +243,6 @@ public:
         bits_ = res.encode();
         return *this;
     }
-    */
 
     bool operator==(const FixedX &rhs) const
     {

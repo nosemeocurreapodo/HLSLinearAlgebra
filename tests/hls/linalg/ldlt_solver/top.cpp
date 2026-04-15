@@ -1,7 +1,12 @@
 #include "linalg/linalg.h"
 #include "linalg/ldlt_solver.h"
-// #include "hls_numerics/FloatX.h"
+#include "hls_numerics/FixedX.h"
+#include "hls_numerics/FloatX.h"
 // #include "hls_numerics/Posit.h"
+
+// using T = float;
+//using T = FloatX<32, 8>;
+using T = FixedX<32, 16>;
 
 // Top-level HLS function for LDLT solver (fixed N=6)
 extern "C" void top(
@@ -69,7 +74,7 @@ extern "C" void top(
 
 #pragma HLS PIPELINE
 
-    linalg::Mat6<float> A;
+    linalg::Mat6<T> A;
 
     // Fill matrix (row-major order)
     A(0, 0) = in_0;
@@ -109,18 +114,18 @@ extern "C" void top(
     A(5, 4) = in_34;
     A(5, 5) = in_35;
 
-    linalg::Vec6<float> b;
-    b(0) = (float)b0;
-    b(1) = (float)b1;
-    b(2) = (float)b2;
-    b(3) = (float)b3;
-    b(4) = (float)b4;
-    b(5) = (float)b5;
+    linalg::Vec6<T> b;
+    b(0) = (T)b0;
+    b(1) = (T)b1;
+    b(2) = (T)b2;
+    b(3) = (T)b3;
+    b(4) = (T)b4;
+    b(5) = (T)b5;
 
     // Compute LDLT and solve
-    linalg::LDLT<float, 6> solver;
+    linalg::LDLT<T, 6> solver;
     solver.compute(A);
-    linalg::Vec6<float> x = solver.solve(b);
+    linalg::Vec6<T> x = solver.solve(b);
 
     out_0 = (double)x(0);
     out_1 = (double)x(1);

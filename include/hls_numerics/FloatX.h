@@ -848,6 +848,15 @@ public:
         return *this;
     }
 
+    FloatX &operator-=(const FloatXUnpacked<ebits, fbits> &rhs)
+    {
+        FloatXUnpacked<ebits, fbits> res;
+        res.decode(bits_);
+        res = res - rhs;
+        bits_ = res.encode();
+        return *this;
+    }
+
     bool operator==(const FloatXUnpacked<ebits, fbits> &rhs) const
     {
         FloatXUnpacked<ebits, fbits> unpacked;
