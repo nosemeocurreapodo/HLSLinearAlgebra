@@ -17,20 +17,22 @@ public:
     {
     }
 
-    FixedX(const FixedX &other)
+    template <int in_nbits, int in_ibits>
+    FixedX(const FixedX<in_nbits, in_ibits> &other)
     {
 #pragma HLS INLINE off
 
-        bits_ = other.bits_;
+        bits_ = other.bits_ << (fbits - other.fbits);
     }
 
-    FixedX &operator=(const FixedX &other)
+    template <int in_nbits, int in_ibits>
+    FixedX &operator=(const FixedX<in_nbits, in_ibits> &other)
     {
 #pragma HLS INLINE off
 
         // if (this != &other)
         {
-            bits_ = other.bits_;
+            bits_ = other.bits_ << (fbits - other.fbits);
         }
         return *this;
     }
@@ -228,19 +230,25 @@ public:
         return FixedX(res);
     }
 
-    FixedX &operator*=(const FixedX &rhs)
+    template <int in_nbits, int in_ibits>
+    FixedX &operator*=(const FixedX<in_nbits, in_ibits> &rhs)
     {
-        *this = *this * rhs;
-
+        FixedX<nbits + in_nbits, ibits + in_ibits> res = *this * rhs;
+        *this = res;
         return *this;
     }
 
     FixedX &operator+=(const FixedX &rhs)
     {
-        FloatXUnpacked<ebits, fbits> res;
-        res.decode(bits_);
-        res = res + rhs;
-        bits_ = res.encode();
+        FixedX res = *this + rhs;
+        *this = res;
+        return *this;
+    }
+
+    FixedX &operator-=(const FixedX &rhs)
+    {
+        FixedX res = *this - rhs;
+        *this = res;
         return *this;
     }
 
