@@ -277,7 +277,7 @@ public:
         return bits_ == rhs.bits_ || rhs.bits_ < bits_;
     }
 
-private:
+    // private:
     ap_int<nbits> bits_;
 };
 
