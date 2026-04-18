@@ -8,7 +8,7 @@
 // #define HLS_PIPELINE HLS_PRAGMA(HLS PIPELINE)
 // #define HLS_ARRAY_PARTITION(var, type, dim) HLS_PRAGMA(HLS ARRAY_PARTITION variable = var type = type dim = dim)
 #include "hls_math.h"
-//namespace math = hls;
+// namespace math = hls;
 using namespace hls;
 #else
 // #define HLS_PRAGMA(x)
@@ -17,11 +17,12 @@ using namespace hls;
 // #define HLS_PIPELINE
 // #define HLS_ARRAY_PARTITION(var, type, dim)
 #include <cmath>
-//namespace math = std;
+// namespace math = std;
 using namespace std;
 #endif
 
 #include "common.h"
+#include "linalgview.h"
 
 namespace linalg
 {
@@ -345,6 +346,18 @@ namespace linalg
         {
             return data_;
         }
+
+        /*
+        MatView<Type> asView()
+        {
+            return MatView<Type>(data_, _rows, _cols);
+        }
+
+        const MatView<Type> asView() const
+        {
+            return MatView<Type>(const_cast<Type *>(data_), _rows, _cols);
+        }
+        */
 
         // Dimension accessors
         static constexpr int rows() { return _rows; }

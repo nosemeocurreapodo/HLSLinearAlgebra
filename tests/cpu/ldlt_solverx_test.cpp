@@ -48,29 +48,29 @@ void TestLDLTxSolverRandomSPD(int num_systems = 5, int num_rhs_per_system = 3)
         A_eig += 0.5 * Eigen::MatrixX<double>::Identity(size, size); // strengthen positive-definiteness
 
         // Copy to your linalg::MatN
-        Mat<double, size, size> Ac_linalg;
-        Matx<double> A_linalg(size, size);
+        Mat<double, size, size> A_linalg;
+        Matx<double> Ax_linalg(size, size);
         for (int i = 0; i < size; ++i)
         {
             for (int j = 0; j < size; ++j)
             {
                 A_linalg(i, j) = A_eig(i, j);
-                Ac_linalg(i, j) = A_eig(i, j);
+                Ax_linalg(i, j) = A_eig(i, j);
             }
         }
 
-        LDLT<double, size> ldltc_linalg;
-        ldltc_linalg.compute(Ac_linalg);
-
-        // Factorization with your LDLT
-        LDLTx<double> ldlt_linalg(size);
+        LDLT<double, size> ldlt_linalg;
         ldlt_linalg.compute(A_linalg);
 
+        // Factorization with your LDLT
+        LDLTx<double> ldltx_linalg(size);
+        ldltx_linalg.compute(Ax_linalg);
+
         LDLT_LAPACK<double> ldlt_lapack(size);
-        ldlt_lapack.compute(A_linalg);
+        ldlt_lapack.compute(Ax_linalg);
 
         DENSE_CHOLESKY_CHOLMOD<double> cholesky_lapack(size);
-        cholesky_lapack.compute(A_linalg);
+        cholesky_lapack.compute(Ax_linalg);
 
         // Factorization with Eigen's LDLT
         Eigen::LDLT<Eigen::MatrixX<double>> ldlt_eig(A_eig);
@@ -91,22 +91,22 @@ void TestLDLTxSolverRandomSPD(int num_systems = 5, int num_rhs_per_system = 3)
             }
 
             // Copy b to your VecN
-            Vec<double, size> bc_linalg;
-            Vecx<double> b_linalg(size);
+            Vec<double, size> b_linalg;
+            Vecx<double> bx_linalg(size);
             for (int i = 0; i < size; ++i)
             {
                 b_linalg(i) = b_eig(i);
-                bc_linalg(i) = b_eig(i);
+                bx_linalg(i) = b_eig(i);
             }
 
             // Solve with your solver
-            Vec<double, size> xc_linalg = ldltc_linalg.solve(bc_linalg);
+            Vec<double, size> x_linalg = ldlt_linalg.solve(b_linalg);
 
-            Vecx<double> x_linalg = ldlt_linalg.solve(b_linalg);
+            Vecx<double> xx_linalg = ldltx_linalg.solve(bx_linalg);
 
-            Vecx<double> x_lapack = ldlt_lapack.solve(b_linalg);
+            Vecx<double> x_lapack = ldlt_lapack.solve(bx_linalg);
 
-            Vecx<double> x_cholesky = cholesky_lapack.solve(b_linalg);
+            Vecx<double> x_cholesky = cholesky_lapack.solve(bx_linalg);
 
             // Solve with Eigen's LDLT
             Eigen::VectorX<double> x_eig = ldlt_eig.solve(b_eig);
@@ -122,7 +122,7 @@ void TestLDLTxSolverRandomSPD(int num_systems = 5, int num_rhs_per_system = 3)
                     << ", rhs " << rhs
                     << ", index " << i;
 
-                EXPECT_NEAR(x_eig(i), xc_linalg(i), kTol)
+                EXPECT_NEAR(x_eig(i), xx_linalg(i), kTol)
                     << "Eigen Mismatch at size N=" << size
                     << ", system " << sys
                     << ", rhs " << rhs
@@ -179,22 +179,22 @@ TEST(LDLTx_solver, TimingComparison)
     Eigen::SparseMatrix<T> Hs_eigen = from_dense_to_sparse<Matx<T>, Eigen::SparseMatrix<T>>(S.H);
     Eigen::VectorX<T> g_eigen(n);
 
-    Mat<T, n, n> Hc_linalg;
-    Mat<T, n, 1> gc_linalg;
+    Mat<T, n, n> H_linalg;
+    Mat<T, n, 1> g_linalg;
 
     for (int i = 0; i < n; i++)
     {
         g_eigen(i) = S.g(i);
-        gc_linalg(i, 0) = S.g(i);
+        g_linalg(i, 0) = S.g(i);
         for (int j = 0; j < n; j++)
         {
             Hd_eigen(i, j) = S.H(i, j);
-            Hc_linalg(i, j) = S.H(i, j);
+            H_linalg(i, j) = S.H(i, j);
         }
     }
 
-    LDLT<T, n> ldltc_linalg;
-    LDLTx<T> ldlt_linalg(n);
+    LDLT<T, n> ldlt_linalg;
+    LDLTx<T> ldltx_linalg(n);
     LDLT_LAPACK<T> ldlt_lapack(n);
     DENSE_CHOLESKY_CHOLMOD<T> cholesky_lapack(n);
     Eigen::LDLT<Eigen::MatrixX<T>> ldlt_eig(n);
@@ -203,18 +203,20 @@ TEST(LDLTx_solver, TimingComparison)
 
     ldlt_sparse_eig.analyzePattern(Hs_eigen);
 
-    auto ldltc_linalg_iter = [&]()
+    auto ldlt_linalg_iter = [&]()
     {
-        ldltc_linalg.compute(Hc_linalg);
-        Mat<T, n, 1> x_ref = ldltc_linalg.solve(gc_linalg);
+        ldlt_linalg.compute(H_linalg);
+        Mat<T, n, 1> x_ref = ldlt_linalg.solve(g_linalg);
         volatile T sink = x_ref(0, 0);
         (void)sink;
     };
 
-    auto ldlt_linalg_iter = [&]()
+    auto ldltx_linalg_iter = [&]()
     {
-        ldlt_linalg.compute(S.H);
-        Vecx<T> x_ref = ldlt_linalg.solve(S.g);
+        ldltx_linalg.compute(S.H);
+        Vecx<T> x_ref(n);
+        VecView<T> x_ref_view(x_ref.data(), n);
+        ldltx_linalg.solve(S.g);
         volatile T sink = x_ref(0);
         (void)sink;
     };
@@ -261,7 +263,7 @@ TEST(LDLTx_solver, TimingComparison)
 
     // Use small iters; dense is expensive
     Timing t_linalg = time_it(ldlt_linalg_iter, /*iters=*/10, /*warmup=*/1);
-    Timing t_linalgc = time_it(ldltc_linalg_iter, /*iters=*/10, /*warmup=*/1);
+    Timing t_linalgx = time_it(ldltx_linalg_iter, /*iters=*/10, /*warmup=*/1);
 
     Timing t_lapack = time_it(ldlt_lapack_iter, /*iters=*/10, /*warmup=*/1);
     Timing t_clapack = time_it(cholesky_lapack_iter, /*iters=*/10, /*warmup=*/1);
@@ -272,7 +274,7 @@ TEST(LDLTx_solver, TimingComparison)
 
     std::cout << "[Timing] Medium compare (n=" << n << "): "
               << "Linalg avg=" << t_linalg.ms << " ms, "
-              << "Linalgc avg=" << t_linalgc.ms << " ms, "
+              << "Linalgc avg=" << t_linalgx.ms << " ms, "
               << "Lapack avg=" << t_lapack.ms << " ms, "
               << "cLapack avg=" << t_clapack.ms << " ms, "
               << "Eigen avg=" << t_eigen.ms << " ms, "
