@@ -30,7 +30,7 @@ namespace linalg
     //   - diagonal of L is implicit 1
     //
     // The upper triangle is ignored after factorization.
-    template <typename T>
+    template <typename T, int max_n>
     Status ldlt_factorize(MatView<T> A)
     {
 #pragma HLS inline off
@@ -44,13 +44,25 @@ namespace linalg
 
     fac_out_loop:
         for (int i = 0; i < n; ++i)
+        // for (int i = 0; i < max_n; ++i)
         {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+            if (i >= n)
+                continue;
+
             // Compute D(i)
             T d = A(i, i);
 
         fac_diag_loop:
             for (int k = 0; k < i; ++k)
+            // for (int k = 0; k < max_n; ++k)
             {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                if (k >= i)
+                    continue;
+
                 const T Lik = A(i, k);
                 d -= Lik * Lik * A(k, k);
             }
@@ -66,12 +78,24 @@ namespace linalg
         // Compute L(j,i), j > i
         fac_low_out_loop:
             for (int j = i + 1; j < n; ++j)
+            // for (int j = i + 1; j < max_n; ++j)
             {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                if (j >= n)
+                    continue;
+
                 T lij = A(j, i);
 
             fac_low_in_loop:
                 for (int k = 0; k < i; ++k)
+                // for (int k = 0; k < max_n; ++k)
                 {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                    if (k >= i)
+                        continue;
+
                     lij -= A(j, k) * A(i, k) * A(k, k);
                 }
                 A(j, i) = lij * inv_d;
@@ -82,30 +106,42 @@ namespace linalg
     }
 
     // In-place solve: b := x
-    template <typename T, int max_n = 16>
+    template <typename T, int max_n>
     Status ldlt_solve(const MatView<T> A, VecView<T> b)
     {
 #pragma HLS inline off
 
         if (A.rows() != A.cols())
-        {
             return Status::NotSquare;
-        }
         if (b.size() != A.rows())
             return Status::DimensionMismatch;
+        if (b.size() != max_n)
+            return Status::DimensionMismatch;
 
-        const int n = b.size();
-        if (n == 0)
-            return Status::Success;
+        // const int n = b.size();
+        // if (n == 0)
+        //     return Status::Success;
 
         T b_buf[max_n];
+#pragma HLS BIND_STORAGE variable = b_buf type = ram_1p
 
+        T A_buf[max_n];
+#pragma HLS BIND_STORAGE variable = A_buf type = ram_1p
+
+    solve_b_in:
+        // for (int i = 0; i < n; i++)
         for (int i = 0; i < max_n; i++)
         {
-#pragma HLS unroll off
+#pragma HLS loop_tripcount min = max_n max = max_n
+            // #pragma HLS inline off
 
-            if (i < b.size())
-                b_buf[i] = b(i);
+            // #pragma HLS unroll off
+            // #pragma HLS pipeline II = 1
+
+            // if (i >= n)
+            //     continue;
+
+            b_buf[i] = b(i);
         }
 
     // Forward solve: L y = b
@@ -113,37 +149,56 @@ namespace linalg
         // for (int i = 0; i < n; ++i)
         for (int i = 0; i < max_n; ++i)
         {
-// #pragma HLS loop_tripcount min = 6 max = 64
+#pragma HLS loop_tripcount min = max_n max = max_n
+
 #pragma HLS unroll off
             // #pragma HLS loop_flatten
 
-            if (i >= n)
-                continue;
+            // if (i >= n)
+            //     continue;
 
-            // T sum = b(i);
-            T sum = T(0);
-        solve_forw_in_loop:
-            // for (int j = 0; j < i; ++j)
+        solve_forw_A_loop:
+            // for (int j = 0; j < n; ++j)
             for (int j = 0; j < max_n; ++j)
             {
-                // #pragma HLS loop_tripcount min = 6 max = 64
+#pragma HLS loop_tripcount min = max_n max = max_n
 
-                if (j >= i)
-                    continue;
+                // if (j >= n)
+                //     continue;
 
-                sum -= A(i, j) * b_buf[j];
+                A_buf[j] = A(i, j);
+            }
+
+            T sum = b_buf[i];
+            // T sum = T(0);
+        solve_forw_in_loop:
+            for (int j = 0; j < i; ++j)
+            // for (int j = 0; j < max_n; ++j)
+            {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                // if (j >= i)
+                //     continue;
+
+                sum -= A_buf[j] * b_buf[j];
                 // sum -= A(i, j) * b(j);
             }
-            // b(i) = sum;
+            b_buf[i] = sum;
             // b(i) += sum;
-            b_buf[i] += sum;
+            // b_buf[i] += sum;
         }
 
         // Diagonal solve: D z = y
 
     solve_diag_loop:
-        for (int i = 0; i < n; ++i)
+        // for (int i = 0; i < n; ++i)
+        for (int i = 0; i < max_n; ++i)
         {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+            // if (i >= n)
+            //     continue;
+
             const T d = A(i, i);
             if (abs(d) <= static_cast<T>(1e-9))
                 return Status::SingularPivot;
@@ -153,22 +208,54 @@ namespace linalg
 
     // Backward solve: L^T x = z
     solve_back_out_loop:
-        for (int ii = n - 1; ii >= 0; --ii)
+        // for (int ii = n - 1; ii >= 0; --ii)
+        for (int ii = max_n - 1; ii >= 0; --ii)
         {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+            // if (ii >= n)
+            //     continue;
+
+        solve_back_A_loop:
+            // for (int j = 0; j < n; ++j)
+            for (int j = 0; j < max_n; ++j)
+            {
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                // if (j >= n)
+                //     continue;
+
+                A_buf[j] = A(j, ii);
+            }
+
             T sum = b_buf[ii];
 
         solve_back_in_loop:
-            for (int j = ii + 1; j < n; ++j)
+            // for (int j = ii + 1; j < n; ++j)
+            for (int j = ii + 1; j < max_n; ++j)
             {
-                sum -= A(j, ii) * b_buf[j];
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+                // if (j >= n)
+                //     continue;
+
+                // sum -= A(j, ii) * b_buf[j];
+                sum -= A_buf[j] * b_buf[j];
+                // b_buf[ii] -= A(j, ii) * b_buf[j];
             }
             b_buf[ii] = sum;
         }
 
+    solve_b_out:
+        // for (int i = 0; i < n; i++)
         for (int i = 0; i < max_n; i++)
         {
-            if (i < b.size())
-                b(i) = b_buf[i];
+#pragma HLS loop_tripcount min = max_n max = max_n
+
+            // if (i >= n)
+            //     continue;
+
+            b(i) = b_buf[i];
         }
 
         return Status::Success;

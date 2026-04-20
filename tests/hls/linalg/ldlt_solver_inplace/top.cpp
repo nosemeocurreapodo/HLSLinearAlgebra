@@ -12,8 +12,8 @@ extern "C" void top(
     int rows,
     int cols)
 {
-#pragma HLS INTERFACE m_axi port = mat_in
-#pragma HLS INTERFACE m_axi port = vec_in_out
+#pragma HLS INTERFACE m_axi port = mat_in bundle = gmem1
+#pragma HLS INTERFACE m_axi port = vec_in_out bundle = gmem2
 
 #pragma HLS INTERFACE s_axilite port = rows bundle = control
 #pragma HLS INTERFACE s_axilite port = cols bundle = control
@@ -25,6 +25,6 @@ extern "C" void top(
     linalg::MatView<T> A(mat_in, rows, cols);
     linalg::VecView<T> b(vec_in_out, rows);
 
-    ldlt_factorize(A);
-    ldlt_solve(A, b);
+    linalg::ldlt_factorize<T, 16>(A);
+    linalg::ldlt_solve<T, 16>(A, b);
 }
