@@ -4,9 +4,9 @@
 #include "hls_numerics/FloatX.h"
 // #include "hls_numerics/Posit.h"
 
-// using T = float;
-using T = FloatX<32, 8>;
-//using T = FixedX<32, 8>;
+using T = float;
+//using T = FloatX<32, 8>;
+// using T = FixedX<32, 8>;
 
 // Top-level HLS function for LDLT solver (fixed N=6)
 extern "C" void top(

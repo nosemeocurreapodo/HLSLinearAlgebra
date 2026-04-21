@@ -46,25 +46,57 @@ public:
 
     FloatXUnpacked(int c)
     {
+        if (c == 0)
+        {
+            zero_ = 1;
+            inf_ = 0;
+            sign_ = 0;
+            exp_ = 0;
+            mant_ = 0;
+            return;
+        }
+
+        zero_ = 0;
+        inf_ = 0;
+
         bool psign = c < 0;
         ap_uint<32> i = hls::abs(c);
         int lz = count_leading_zeros(i);
         i = i << (lz + 1);
 
         sign_ = psign;
-        exp_ = lz;
-        mant_ = i;
+        exp_ = 31 - lz + fbias<ebits>::value;
+        if constexpr (fbits <= 32)
+            mant_ = i(31, 32 - fbits);
+        else
+            mant_(fbits - 1, fbits - 32) = i;
     }
 
     FloatXUnpacked(unsigned int c)
     {
+        if (c == 0)
+        {
+            zero_ = 1;
+            inf_ = 0;
+            sign_ = 0;
+            exp_ = 0;
+            mant_ = 0;
+            return;
+        }
+
+        zero_ = 0;
+        inf_ = 0;
+
         ap_uint<32> i = c;
         int lz = count_leading_zeros(i);
         i = i << (lz + 1);
 
         sign_ = 0;
-        exp_ = lz;
-        mant_ = i;
+        exp_ = 31 - lz + fbias<ebits>::value;
+        if constexpr (fbits <= 32)
+            mant_ = i(31, 32 - fbits);
+        else
+            mant_(fbits - 1, fbits - 32) = i;
     }
 
     operator int() const
@@ -149,6 +181,8 @@ public:
             zero_ = 1;
         else
             zero_ = 0;
+
+        inf_ = 0;
 
         sign_ = bits[nbits - 1];
         exp_ = bits(nbits - 2, fbits);
@@ -461,6 +495,8 @@ public:
 #pragma HLS INLINE off
 
         FloatXUnpacked in2;
+        in2.zero_ = rhs.zero_;
+        in2.inf_ = rhs.inf_;
         in2.sign_ = !rhs.sign_;
         in2.exp_ = rhs.exp_;
         in2.mant_ = rhs.mant_;
@@ -840,6 +876,15 @@ public:
         FloatXUnpacked<ebits, fbits> res;
         res.decode(bits_);
         res = res * rhs;
+        bits_ = res.encode();
+        return *this;
+    }
+
+    FloatX &operator/=(const FloatXUnpacked<ebits, fbits> &rhs)
+    {
+        FloatXUnpacked<ebits, fbits> res;
+        res.decode(bits_);
+        res = res / rhs;
         bits_ = res.encode();
         return *this;
     }
