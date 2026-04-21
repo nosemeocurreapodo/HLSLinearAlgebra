@@ -36,11 +36,27 @@ namespace linalg
 #pragma HLS inline off
 
         if (A.rows() != A.cols())
-        {
             return Status::NotSquare;
-        }
+
+        if (A.rows() != max_n)
+            return Status::DimensionMismatch;
 
         const int n = A.rows();
+
+        T A1_buf[max_n];
+#pragma HLS BIND_STORAGE variable = A1_buf type = ram_1p
+
+        T A2_buf[max_n];
+#pragma HLS BIND_STORAGE variable = A2_buf type = ram_1p
+
+
+        T D_buf[max_n];
+#pragma HLS BIND_STORAGE variable = D_buf type = ram_1p
+
+        for (int j = 0; j < n; ++j)
+        {
+            D_buf[j] = D(j, j);
+        }
 
     fac_out_loop:
         for (int i = 0; i < n; ++i)
@@ -50,6 +66,12 @@ namespace linalg
 
             if (i >= n)
                 continue;
+
+            for (int j = 0; j < n; ++j)
+            {
+                A1_buf[j] = A(i, j);
+                A2_buf[j] = A(j, i);
+            }
 
             // Compute D(i)
             T d = A(i, i);
@@ -118,7 +140,7 @@ namespace linalg
         if (b.size() != max_n)
             return Status::DimensionMismatch;
 
-        // const int n = b.size();
+        const int n = b.size();
         // if (n == 0)
         //     return Status::Success;
 
@@ -129,8 +151,8 @@ namespace linalg
 #pragma HLS BIND_STORAGE variable = A_buf type = ram_1p
 
     solve_b_in:
-        // for (int i = 0; i < n; i++)
-        for (int i = 0; i < max_n; i++)
+        for (int i = 0; i < n; i++)
+        // for (int i = 0; i < max_n; i++)
         {
 #pragma HLS loop_tripcount min = max_n max = max_n
             // #pragma HLS inline off
@@ -146,20 +168,20 @@ namespace linalg
 
     // Forward solve: L y = b
     solve_forw_out_loop:
-        // for (int i = 0; i < n; ++i)
-        for (int i = 0; i < max_n; ++i)
+        for (int i = 0; i < n; ++i)
+        // for (int i = 0; i < max_n; ++i)
         {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
-#pragma HLS unroll off
-            // #pragma HLS loop_flatten
+            // #pragma HLS unroll off
+            //  #pragma HLS loop_flatten
 
             // if (i >= n)
             //     continue;
 
         solve_forw_A_loop:
-            // for (int j = 0; j < n; ++j)
-            for (int j = 0; j < max_n; ++j)
+            for (int j = 0; j < n; ++j)
+            // for (int j = 0; j < max_n; ++j)
             {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
@@ -177,8 +199,8 @@ namespace linalg
             {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
-                // if (j >= i)
-                //     continue;
+                if (j >= i)
+                    continue;
 
                 sum -= A_buf[j] * b_buf[j];
                 // sum -= A(i, j) * b(j);
@@ -191,8 +213,8 @@ namespace linalg
         // Diagonal solve: D z = y
 
     solve_diag_loop:
-        // for (int i = 0; i < n; ++i)
-        for (int i = 0; i < max_n; ++i)
+        for (int i = 0; i < n; ++i)
+        // for (int i = 0; i < max_n; ++i)
         {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
@@ -208,8 +230,8 @@ namespace linalg
 
     // Backward solve: L^T x = z
     solve_back_out_loop:
-        // for (int ii = n - 1; ii >= 0; --ii)
-        for (int ii = max_n - 1; ii >= 0; --ii)
+        for (int ii = n - 1; ii >= 0; --ii)
+        // for (int ii = max_n - 1; ii >= 0; --ii)
         {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
@@ -217,8 +239,8 @@ namespace linalg
             //     continue;
 
         solve_back_A_loop:
-            // for (int j = 0; j < n; ++j)
-            for (int j = 0; j < max_n; ++j)
+            for (int j = 0; j < n; ++j)
+            // for (int j = 0; j < max_n; ++j)
             {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
@@ -231,13 +253,14 @@ namespace linalg
             T sum = b_buf[ii];
 
         solve_back_in_loop:
-            // for (int j = ii + 1; j < n; ++j)
-            for (int j = ii + 1; j < max_n; ++j)
+            for (int j = ii + 1; j < n; ++j)
+            // for (int j = ii + 1; j < max_n; ++j)
+            // for (int j = 0; j < max_n; ++j)
             {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
-                // if (j >= n)
-                //     continue;
+                if (j < ii + 1) // || j >= n)
+                    continue;
 
                 // sum -= A(j, ii) * b_buf[j];
                 sum -= A_buf[j] * b_buf[j];
@@ -247,8 +270,8 @@ namespace linalg
         }
 
     solve_b_out:
-        // for (int i = 0; i < n; i++)
-        for (int i = 0; i < max_n; i++)
+        for (int i = 0; i < n; i++)
+        // for (int i = 0; i < max_n; i++)
         {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
