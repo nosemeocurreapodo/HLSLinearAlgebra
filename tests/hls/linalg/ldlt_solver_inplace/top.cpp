@@ -25,6 +25,6 @@ extern "C" void top(
     linalg::MatView<T> A(mat_in, rows, cols);
     linalg::VecView<T> b(vec_in_out, rows);
 
-    linalg::ldlt_factorize<T, 16>(A);
+    // linalg::ldlt_factorize<T, 16>(A);
     linalg::ldlt_solve<T, 16>(A, b);
 }

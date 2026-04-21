@@ -49,13 +49,12 @@ namespace linalg
         T A2_buf[max_n];
 #pragma HLS BIND_STORAGE variable = A2_buf type = ram_1p
 
-
         T D_buf[max_n];
 #pragma HLS BIND_STORAGE variable = D_buf type = ram_1p
 
         for (int j = 0; j < n; ++j)
         {
-            D_buf[j] = D(j, j);
+            D_buf[j] = A(j, j);
         }
 
     fac_out_loop:
@@ -150,6 +149,9 @@ namespace linalg
         T A_buf[max_n];
 #pragma HLS BIND_STORAGE variable = A_buf type = ram_1p
 
+        T D_buf[max_n];
+#pragma HLS BIND_STORAGE variable = D_buf type = ram_1p
+
     solve_b_in:
         for (int i = 0; i < n; i++)
         // for (int i = 0; i < max_n; i++)
@@ -164,6 +166,7 @@ namespace linalg
             //     continue;
 
             b_buf[i] = b(i);
+            D_buf[i] = A(i, i);
         }
 
     // Forward solve: L y = b
@@ -203,7 +206,7 @@ namespace linalg
                     continue;
 
                 sum -= A_buf[j] * b_buf[j];
-                // sum -= A(i, j) * b(j);
+                // sum -= A(i, j) * b_buf[j];
             }
             b_buf[i] = sum;
             // b(i) += sum;
@@ -221,7 +224,8 @@ namespace linalg
             // if (i >= n)
             //     continue;
 
-            const T d = A(i, i);
+            // const T d = A(i, i);
+            const T d = D_buf[i];
             if (abs(d) <= static_cast<T>(1e-9))
                 return Status::SingularPivot;
             // b(i) /= d;
@@ -264,7 +268,7 @@ namespace linalg
 
                 // sum -= A(j, ii) * b_buf[j];
                 sum -= A_buf[j] * b_buf[j];
-                // b_buf[ii] -= A(j, ii) * b_buf[j];
+                //  b_buf[ii] -= A(j, ii) * b_buf[j];
             }
             b_buf[ii] = sum;
         }

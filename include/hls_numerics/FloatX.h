@@ -518,11 +518,16 @@ public:
         out.inf_ = rhs.zero_;
         out.sign_ = sign_ ^ rhs.sign_;
 
-        ap_uint<ebits + 1> exp = exp_ - rhs.exp_;
-        ap_uint<fbits * 2 + 1> frac = mant_ / rhs.mant_;
+        ap_uint<fbits + 1> num = (ap_uint<1>(1), mant_);
+        ap_uint<fbits + 1> den = (ap_uint<1>(1), rhs.mant_);
+
+        ap_uint<ebits + 1> exp = exp_ - rhs.exp_ + (ap_uint<ebits + 1>)fbias<ebits>::value;
+
+        ap_uint<fbits * 2 + 2> num1 = (ap_uint<fbits * 2 + 2>)num << (fbits + 1);
+        ap_uint<fbits * 2 + 2> frac = num1 / den;
 
         // normalize
-        if (frac < 1)
+        if (frac[fbits + 1] == 0)
         {
             frac = frac << 1;
             exp--;
@@ -543,8 +548,8 @@ public:
         //     frac = 0;
         // }
 
-        out.exp_ = exp;
-        out.mant_ = frac;
+        out.exp_ = exp(ebits - 1, 0);
+        out.mant_ = frac(fbits, 1);
 
         return out;
     }
