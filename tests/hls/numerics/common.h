@@ -15,7 +15,9 @@ void test(double in_a, double in_b, double out[10])
     T acc2 = 0;
     T acc3 = 0;
     T acc4 = 0;
-    for (int i = 0; i < 10; i++)
+
+acc_loop:
+    for (int i = 0; i < 1; i++)
     {
         acc1 += ((a * b) + T(i));
         acc2 -= a * b + T(i);

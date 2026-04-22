@@ -22,7 +22,12 @@ public:
     {
 #pragma HLS INLINE off
 
-        bits_ = other.bits_ << (fbits - other.fbits);
+        ap_int<nbits> bits;
+        if (fbits >= other.fbits)
+            bits = (ap_int<nbits>)other.bits_ << (fbits - other.fbits);
+        else
+            bits = other.bits_ >> (other.fbits - fbits);
+        bits_ = bits;
     }
 
     template <int in_nbits, int in_ibits>
@@ -32,7 +37,12 @@ public:
 
         // if (this != &other)
         {
-            bits_ = other.bits_ << (fbits - other.fbits);
+            ap_int<nbits> bits;
+            if (fbits >= other.fbits)
+                bits = (ap_int<nbits>)other.bits_ << (fbits - other.fbits);
+            else
+                bits = other.bits_ >> (other.fbits - fbits);
+            bits_ = bits;
         }
         return *this;
     }
@@ -234,6 +244,14 @@ public:
     FixedX &operator*=(const FixedX<in_nbits, in_ibits> &rhs)
     {
         FixedX<nbits + in_nbits, ibits + in_ibits> res = *this * rhs;
+        *this = res;
+        return *this;
+    }
+
+    template <int in_nbits, int in_ibits>
+    FixedX &operator/=(const FixedX<in_nbits, in_ibits> &rhs)
+    {
+        FixedX<nbits + in_nbits, ibits + in_ibits> res = *this / rhs;
         *this = res;
         return *this;
     }

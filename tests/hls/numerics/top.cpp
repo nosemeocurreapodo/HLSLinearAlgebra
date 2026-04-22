@@ -10,7 +10,7 @@
 // -DFORMAT_FLOAT  -> use native float
 // (default)        -> use FloatX<32,8>
 
-#define FORMAT_FLOATX
+#define FORMAT_FLOAT
 
 extern "C" void top(double in_a, double in_b, double out[10])
 {
@@ -22,9 +22,9 @@ extern "C" void top(double in_a, double in_b, double out[10])
     // #pragma HLS PIPELINE
 
 #if defined(FORMAT_FIXED)
-    using T = ap_fixed<32, 8>;
+    using T = ap_fixed<32, 16>;
 #elif defined(FORMAT_FIXEDX)
-    using T = FixedX<32, 8>;
+    using T = FixedX<32, 16>;
 #elif defined(FORMAT_FLOAT)
     using T = float;
 #elif defined(FORMAT_FLOATX)
