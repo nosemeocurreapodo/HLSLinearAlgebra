@@ -13,13 +13,23 @@ namespace linalg
         Column,
         Row
     };
+}
 
-    template <typename T>
-    inline T abs(const T &a)
-    {
-        if (a >= T(0))
-            return a;
-        else
-            return -a;
-    }
+template <typename T>
+inline T max(const T &a, const T &b)
+{
+    return a > b ? a : b;
+}
+
+template <typename T>
+inline T min(const T &a, const T &b)
+{
+    return a < b ? a : b;
+}
+
+template <typename T>
+inline T clamp(T a, T _min, T _max)
+{
+    // return hls::clamp(a, _min, _max);
+    return min(max(a, _min), _max);
 }

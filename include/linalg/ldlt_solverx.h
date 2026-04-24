@@ -17,7 +17,7 @@ namespace linalg
         {
             A_ = A;
             MatView<T> view(A_.data(), A_.rows(), A_.cols());
-            ldlt_factorize(view);
+            ldlt_factorize<T, 64>(view);
         }
 
         // Solve A x = b for x, given b.
@@ -27,7 +27,7 @@ namespace linalg
             b_ = b;
             MatView<T> mview(A_.data(), A_.rows(), A_.cols());
             VecView<T> vview(b_.data(), b_.size());
-            ldlt_solve(mview, vview);
+            ldlt_solve<T, 64>(mview, vview);
             return b_;
         }
 

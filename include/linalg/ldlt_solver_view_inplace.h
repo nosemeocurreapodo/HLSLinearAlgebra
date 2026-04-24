@@ -38,10 +38,10 @@ namespace linalg
         if (A.rows() != A.cols())
             return Status::NotSquare;
 
-        if (A.rows() != max_n)
-            return Status::DimensionMismatch;
-
         const int n = A.rows();
+
+        if (max_n < n)
+            return Status::DimensionMismatch;
 
         T A1_buf[max_n];
 #pragma HLS BIND_STORAGE variable = A1_buf type = ram_1p
@@ -136,10 +136,12 @@ namespace linalg
             return Status::NotSquare;
         if (b.size() != A.rows())
             return Status::DimensionMismatch;
-        if (b.size() != max_n)
-            return Status::DimensionMismatch;
 
         const int n = b.size();
+
+        if (max_n < n)
+            return Status::DimensionMismatch;
+
         // if (n == 0)
         //     return Status::Success;
 
@@ -263,8 +265,8 @@ namespace linalg
             {
 #pragma HLS loop_tripcount min = max_n max = max_n
 
-                if (j < ii + 1) // || j >= n)
-                    continue;
+                // if (j < ii + 1) // || j >= n)
+                //     continue;
 
                 // sum -= A(j, ii) * b_buf[j];
                 sum -= A_buf[j] * b_buf[j];

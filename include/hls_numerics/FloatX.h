@@ -44,6 +44,63 @@ public:
     }
     */
 
+    template <int in_nbits>
+    FloatXUnpacked(ap_int<in_nbits> c)
+    {
+        if (c == 0)
+        {
+            zero_ = 1;
+            inf_ = 0;
+            sign_ = 0;
+            exp_ = 0;
+            mant_ = 0;
+            return;
+        }
+
+        zero_ = 0;
+        inf_ = 0;
+
+        bool psign = c < 0;
+        ap_uint<32> i = hls::abs(c);
+        int lz = count_leading_zeros(i);
+        i = i << (lz + 1);
+
+        sign_ = psign;
+        exp_ = 31 - lz + fbias<ebits>::value;
+        if constexpr (fbits <= 32)
+            mant_ = i(31, 32 - fbits);
+        else
+            mant_(fbits - 1, fbits - 32) = i;
+    }
+
+    template <int in_nbits>
+    FloatXUnpacked(ap_uint<in_nbits> c)
+    {
+        if (c == 0)
+        {
+            zero_ = 1;
+            inf_ = 0;
+            sign_ = 0;
+            exp_ = 0;
+            mant_ = 0;
+            return;
+        }
+
+        zero_ = 0;
+        inf_ = 0;
+
+        ap_uint<32> i = hls::abs(c);
+        int lz = count_leading_zeros(i);
+        i = i << (lz + 1);
+
+        sign_ = 0;
+        exp_ = 31 - lz + fbias<ebits>::value;
+        if constexpr (fbits <= 32)
+            mant_ = i(31, 32 - fbits);
+        else
+            mant_(fbits - 1, fbits - 32) = i;
+    }
+
     FloatXUnpacked(int c)
     {
         if (c == 0)
@@ -97,6 +154,21 @@ public:
             mant_ = i(31, 32 - fbits);
         else
             mant_(fbits - 1, fbits - 32) = i;
+    }
+
+    template <int in_nbits>
+    operator ap_int<in_nbits>() const
+    {
+        if (zero_ == 0)
+            return 0;
+
+        int exp = exp_ - fbias<ebits>::value;
+        ap_int<in_nbits> res = (ap_uint<2>(0b01), mant_) << exp;
+        if (sign_)
+        {
+            res = -res;
+        }
+        return res;
     }
 
     operator int() const
@@ -731,6 +803,20 @@ public:
         return *this;
     }
 
+    template <int in_nbits>
+    FloatX(ap_int<in_nbits> c)
+    {
+        FloatXUnpacked<ebits, fbits> float_unpacked(c);
+        bits_ = float_unpacked.encode();
+    }
+
+    template <int in_nbits>
+    FloatX(ap_uint<in_nbits> c)
+    {
+        FloatXUnpacked<ebits, fbits> float_unpacked(c);
+        bits_ = float_unpacked.encode();
+    }
+
     FloatX(int c)
     {
         FloatXUnpacked<ebits, fbits> float_unpacked(c);
@@ -772,6 +858,18 @@ public:
 #pragma HLS INLINE off
 
         bits_ = c.encode();
+    }
+
+    template <int in_nbits>
+    operator ap_int<in_nbits>() const
+    {
+        if (bits_ == 0)
+            return 0;
+
+        FloatXUnpacked<ebits, fbits> floatx_unpacked;
+        floatx_unpacked.decode(bits_);
+
+        return floatx_unpacked;
     }
 
     operator int() const
@@ -942,15 +1040,56 @@ public:
         return unpacked == rhs || rhs < unpacked;
     }
 
-private:
+    // private:
     ap_uint<nbits> bits_;
 };
 
 template <int nbits, int ebits>
-FloatX<nbits, ebits> lround(const FloatX<nbits, ebits> &a)
+inline FloatX<nbits, ebits> abs(const FloatX<nbits, ebits> &a)
 {
-    // return hls::lround(a);
-    // return RealType(int(a + (a >= RealType(0) ? RealType(0.5) : RealType(-0.5))));
-    //  return static_cast<T>(static_cast<long>(a + (a >= 0 ? 0.5 : -0.5)));
+    FloatX<nbits, ebits> b = a;
+    if (b.bits_[nbits - 1] == 1)
+        b.bits_[nbits - 1] == 0;
+    return b;
+}
+
+template <int nbits, int ebits>
+inline FloatX<nbits, ebits> round(const FloatX<nbits, ebits> &a)
+{
+    int integer = int(a);
+    FloatX<nbits, ebits> diff = a - FloatX<nbits, ebits>(integer);
+    if (diff > FloatX<nbits, ebits>(0.5))
+        integer++;
+    return FloatX<nbits, ebits>(integer);
+}
+
+template <int nbits, int ebits>
+inline FloatX<nbits, ebits> floor(const FloatX<nbits, ebits> &a)
+{
+    int integer = int(a);
+    return FloatX<nbits, ebits>(integer);
+}
+
+template <int nbits, int ebits>
+inline FloatX<nbits, ebits> ceil(const FloatX<nbits, ebits> &a)
+{
+    int integer = int(a);
+    FloatX<nbits, ebits> diff = a - FloatX<nbits, ebits>(integer);
+    if (diff > FloatX<nbits, ebits>(0.0))
+        integer++;
+    return FloatX<nbits, ebits>(integer);
+}
+
+template <int nbits, int ebits>
+inline FloatX<nbits, ebits> mod(const FloatX<nbits, ebits> &a, const FloatX<nbits, ebits> &b)
+{
+    FloatX<nbits, ebits> c = a / b;
+    FloatX<nbits, ebits> d = a - floor(c) * b;
+    return b;
+}
+
+template <int nbits, int ebits>
+inline FloatX<nbits, ebits> exp(const FloatX<nbits, ebits> &a)
+{
     return a;
 }

@@ -1,26 +1,6 @@
 
 #pragma once
 
-#ifdef USE_VITIS
-// #define HLS_PRAGMA(x) _Pragma(#x)
-// #define HLS_INLINE HLS_PRAGMA(HLS INLINE)
-// #define HLS_UNROLL HLS_PRAGMA(HLS UNROLL)
-// #define HLS_PIPELINE HLS_PRAGMA(HLS PIPELINE)
-// #define HLS_ARRAY_PARTITION(var, type, dim) HLS_PRAGMA(HLS ARRAY_PARTITION variable = var type = type dim = dim)
-#include "hls_math.h"
-// namespace math = hls;
-using namespace hls;
-#else
-// #define HLS_PRAGMA(x)
-// #define HLS_INLINE
-// #define HLS_UNROLL
-// #define HLS_PIPELINE
-// #define HLS_ARRAY_PARTITION(var, type, dim)
-#include <cmath>
-// namespace math = std;
-using namespace std;
-#endif
-
 #include "common.h"
 #include "linalgview.h"
 

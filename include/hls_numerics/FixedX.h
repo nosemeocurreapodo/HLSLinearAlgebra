@@ -20,7 +20,7 @@ public:
     template <int in_nbits, int in_ibits>
     FixedX(const FixedX<in_nbits, in_ibits> &other)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits> bits;
         if (fbits >= other.fbits)
@@ -33,7 +33,7 @@ public:
     template <int in_nbits, int in_ibits>
     FixedX &operator=(const FixedX<in_nbits, in_ibits> &other)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         // if (this != &other)
         {
@@ -47,9 +47,18 @@ public:
         return *this;
     }
 
-    FixedX(ap_int<nbits> c)
+    template <int in_nbits>
+    FixedX(ap_int<in_nbits> c)
     {
-        bits_ = c;
+        ap_int<in_nbits + fbits> b = (ap_int<in_nbits + fbits>)c << fbits;
+        bits_ = b;
+    }
+
+    template <int in_nbits>
+    FixedX(ap_uint<in_nbits> c)
+    {
+        ap_int<in_nbits + fbits> b = (ap_int<in_nbits + fbits>)c << fbits;
+        bits_ = b;
     }
 
     FixedX(int c)
@@ -64,7 +73,7 @@ public:
 
     FixedX(float c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (c == 0)
         {
@@ -90,7 +99,7 @@ public:
 
     FixedX(double c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (c == 0)
         {
@@ -114,6 +123,13 @@ public:
         bits_ = fixed;
     }
 
+    template <int out_nbits>
+    operator ap_int<out_nbits>() const
+    {
+        ap_int<out_nbits> res = bits_ >> fbits;
+        return res;
+    }
+
     operator int() const
     {
         int res = bits_ >> fbits;
@@ -122,7 +138,7 @@ public:
 
     operator float() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits_ == 0)
             return 0.0f;
@@ -155,7 +171,7 @@ public:
 
     operator double() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits_ == 0)
             return 0.0;
@@ -190,7 +206,7 @@ public:
 
     FixedX<nbits + 1, ibits + 1> operator+(const FixedX &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits + 1> res = bits_ + rhs.bits_;
         return FixedX<nbits + 1, ibits + 1>(res);
@@ -198,7 +214,7 @@ public:
 
     FixedX<nbits + 1, ibits + 1> operator-(const FixedX &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits + 1> res = bits_ - rhs.bits_;
         return FixedX<nbits + 1, ibits + 1>(res);
@@ -207,7 +223,7 @@ public:
     template <int in_nbits, int in_ibits>
     FixedX<nbits + in_nbits, ibits + in_ibits> operator*(const FixedX<in_nbits, in_ibits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits + in_nbits> res = bits_ * rhs.bits_;
         return FixedX<nbits + in_nbits, ibits + in_ibits>(res);
@@ -225,7 +241,7 @@ public:
 
     FixedX<nbits, ibits> operator/(const FixedX &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits * 2> num = (ap_int<nbits * 2>)bits_ << fbits;
         ap_int<nbits> res = num / rhs.bits_;
@@ -234,7 +250,7 @@ public:
 
     FixedX operator-() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<nbits> res = -bits_;
         return FixedX(res);
@@ -298,6 +314,50 @@ public:
     // private:
     ap_int<nbits> bits_;
 };
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> abs(const FixedX<nbits, ibits> &a)
+{
+    return a.bits_ >= 0 ? a : -a;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> round(const FixedX<nbits, ibits> &a)
+{
+    FixedX<nbits, ibits> b = a;
+    b.bits_(nbits - ibits - 1, 0) = 0;
+    return b;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> floor(const FixedX<nbits, ibits> &a)
+{
+    FixedX<nbits, ibits> b = a;
+    b.bits_(nbits - ibits - 1, 0) = 0;
+    return b;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> ceil(const FixedX<nbits, ibits> &a)
+{
+    FixedX<nbits, ibits> b = a;
+    b.bits_(nbits - ibits - 1, 0) = 0;
+    return b;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> mod(const FixedX<nbits, ibits> &a, const FixedX<nbits, ibits> &b)
+{
+    FixedX<nbits, ibits> c = a / b;
+    FixedX<nbits, ibits> d = a - floor(c) * b;
+    return b;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> exp(const FixedX<nbits, ibits> &a)
+{
+    return a;
+}
 
 /*
 template <int nbits, int ebits>
