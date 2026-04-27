@@ -82,7 +82,7 @@ public:
         }
 
         ap_uint<32> bits = bitcast_u32(c);
-        FloatXUnpacked<8, 23> float_unpacked;
+        FloatXUnpacked<32, 8> float_unpacked;
         float_unpacked.decode(bits);
 
         int shift = -23 + (float_unpacked.exp_ - fbias<8>::value) + fbits;
@@ -108,7 +108,7 @@ public:
         }
 
         ap_uint<64> bits = bitcast_u64(c);
-        FloatXUnpacked<11, 52> float_unpacked;
+        FloatXUnpacked<64, 11> float_unpacked;
         float_unpacked.decode(bits);
 
         int shift = -52 + (float_unpacked.exp_ - fbias<11>::value) + fbits;
@@ -151,7 +151,7 @@ public:
 
         abs_bits = abs_bits << (shift + 1);
 
-        FloatXUnpacked<8, 23> float_unpacked;
+        FloatXUnpacked<32, 8> float_unpacked;
         float_unpacked.zero_ = 0;
         float_unpacked.inf_ = 0;
         float_unpacked.sign_ = sign;
@@ -186,7 +186,7 @@ public:
         int shift = count_leading_zeros((ap_uint<nbits>)abs_bits);
         abs_bits = abs_bits << (shift + 1);
 
-        FloatXUnpacked<11, 52> float_unpacked;
+        FloatXUnpacked<64, 11> float_unpacked;
         float_unpacked.zero_ = 0;
         float_unpacked.inf_ = 0;
         float_unpacked.sign_ = sign;

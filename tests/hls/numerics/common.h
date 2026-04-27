@@ -5,12 +5,23 @@ void test(double in_a, double in_b, double out[10])
 {
     T a = (T)in_a;
     T b = (T)in_b;
+    double da = (double)a;
 
     T add = a + b;
+    double dadd = (double)add;
+
     T sub = a - b;
+    double dsub = (double)sub;
+
     T mul = a * b;
+    double dmul = (double)mul;
+
     T div = a / b;
+    double ddiv = (double)div;
+
     T mac = a * b + a;
+    double dmac = (double)mac;
+
     T acc1 = 0;
     T acc2 = 0;
     T acc3 = 0;
@@ -25,14 +36,13 @@ acc_loop:
         acc4 /= a * b + T(i);
     }
 
-    out[0] = (double)add;
-    out[1] = (double)sub;
-    out[2] = (double)mul;
-    out[3] = (double)div;
-    out[4] = (double)mac;
-    out[5] = (double)acc1;
-    out[6] = (double)acc2;
-    out[7] = (double)acc3;
-    out[8] = (double)acc4;
-    out[9] = 0.0;
+    out[0] = da;
+    out[1] = dadd;
+    out[2] = dsub;
+    out[3] = dmul;
+    out[4] = ddiv;
+    out[5] = dmac;
+    out[7] = (double)acc2;
+    out[8] = (double)acc3;
+    out[9] = (double)acc4;
 }

@@ -2,28 +2,38 @@
 
 #include "hls_math.h"
 
-inline float abs(const float &a)
+template <typename T>
+inline T abs(const T &a)
 {
     return hls::abs(a);
 }
 
-inline float round(const float &a)
+template <typename T>
+inline T round(const T &a)
 {
     return hls::round(a);
 }
 
-inline half abs(const half &a)
+template <typename T>
+inline T floor(const T &a)
 {
-    return hls::abs(a);
+    return hls::floor(a);
 }
 
-inline half round(const half &a)
+template <typename T>
+inline T ceil(const T &a)
 {
-    return hls::round(a);
+    return hls::ceil(a);
 }
 
-inline float clamp(float a, float min_, float max_)
+template <typename T>
+inline T mod(const T &a, const T &b)
 {
-    //return hls::clamp(a, min_, max_);
-    return max(min(a, max_), min_);
+    return hls::fmod(a, b);
+}
+
+template <typename T>
+inline T exp(const T &a)
+{
+    return hls::exp(a);
 }

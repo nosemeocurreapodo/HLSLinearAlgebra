@@ -10,7 +10,7 @@
 // -DFORMAT_FLOAT  -> use native float
 // (default)        -> use FloatX<32,8>
 
-#define FORMAT_FLOATX
+#define FORMAT_POSIT
 
 extern "C" void top(double in_a, double in_b, double out[10])
 {
