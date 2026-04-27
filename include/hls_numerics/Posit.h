@@ -584,8 +584,8 @@ public:
         bool sign;
         bool zero;
         bool inf = 0;
-        ap_uint<ebits> exp;
-        ap_uint<m_kbits> k;
+        ap_int<ebits + 2> exp;
+        ap_int<m_kbits + 1> k;
 
         ap_int<m_kbits + ebits> nk = (ap_int<m_kbits + ebits>)(k_ - rhs.k_) << ebits;
         ap_int<m_kbits + ebits> diff_texp = nk + (ap_int<m_kbits + ebits>)exp_ - (ap_int<m_kbits + ebits>)rhs.exp_;
@@ -715,7 +715,7 @@ public:
         bool inf = inf_ | rhs.inf_;
         bool sign = sign_ ^ rhs.sign_;
 
-        ap_uint<ebits + 1> exp = exp_ + rhs.exp_;
+        ap_int<ebits + 2> exp = exp_ + rhs.exp_;
         ap_int<m_kbits + 1> k = k_ + rhs.k_;
         // result goes from [1.0 to 4.0)
         ap_uint<m_fbits * 2 + 2> mant = (ap_uint<1>(1), mant_) * (ap_uint<1>(1), rhs.mant_);
@@ -797,9 +797,9 @@ public:
         // goes from (0.5, 2.000)
         ap_uint<m_fbits * 2 + 2> mant = num1 / den;
 
-        if (mant[m_fbits * 2 + 1] == 0)
+        if (mant[m_fbits + 1] == 0)
         {
-            mant << 1;
+            mant = mant << 1;
             exp--;
         }
 
