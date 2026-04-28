@@ -57,12 +57,12 @@ bool check_error(const std::string &op_name, double expected, double actual, dou
 
 // Test vectors for all operations
 const double TEST_VECTORS[][2] = {
+    {0.0, 123.456}, // Zero and non-zero
+    {-50.25, 25.125},   // Negative and positive
     {3.14159, 2.71828}, // Pi and e
     {100.0, 0.5},       // Large and small numbers
     {1.0, 1.0},         // Identity cases
-    {-50.25, 25.125},   // Negative and positive
     //{1.0e6, 1.0e-6},        // Very large and very small
-    {0.0, 123.456}, // Zero and non-zero
     //{123.456, 0.0},         // Division by zero test case
     //{0.0, 0.0},             // Zero cases
     {-1.0, -1.0}, // Negative cases

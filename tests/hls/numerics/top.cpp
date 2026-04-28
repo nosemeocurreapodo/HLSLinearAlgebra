@@ -12,7 +12,7 @@
 
 #define FORMAT_POSIT
 
-extern "C" void top(double in_a, double in_b, double out[10])
+extern "C" void top(double in_a, double in_b, double out[64])
 {
 #pragma HLS INTERFACE s_axilite port = in_a bundle = control
 #pragma HLS INTERFACE s_axilite port = in_b bundle = control

@@ -171,11 +171,11 @@ public:
     template <int in_nbits>
     operator ap_int<in_nbits>() const
     {
-        if (zero_ == 0)
+        if (zero_)
             return 0;
 
         int exp = exp_ - fbias<ebits>::value;
-        ap_int<in_nbits> res = (ap_uint<2>(0b01), mant_) << exp;
+        ap_int<in_nbits> res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
         if (sign_)
         {
             res = -res;
@@ -185,11 +185,11 @@ public:
 
     operator int() const
     {
-        if (zero_ == 0)
+        if (zero_)
             return 0;
 
         int exp = exp_ - fbias<ebits>::value;
-        int res = (ap_uint<2>(0b01), mant_) << exp;
+        int res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
         if (sign_)
         {
             res = -res;
@@ -200,7 +200,7 @@ public:
     operator unsigned int() const
     {
         int exp = exp_ - fbias<ebits>::value;
-        int res = (ap_uint<2>(0b01), mant_) << exp;
+        int res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
         return res;
     }
 
@@ -472,7 +472,7 @@ public:
         return result;
     }
 
-    bool operator==(const FloatXUnpacked &rhs)
+    bool operator==(const FloatXUnpacked &rhs) const
     {
         if (sign_ != rhs.sign_)
         {
@@ -499,12 +499,12 @@ public:
             if (rhs.zero_)
                 return false;
             else
-                return rhs.sign_;
+                return !rhs.sign_;
         }
 
         if (sign_ != rhs.sign_)
         {
-            return rhs.sign_;
+            return !rhs.sign_;
         }
 
         if (exp_ != rhs.exp_)
@@ -518,11 +518,6 @@ public:
         }
 
         return false;
-    }
-
-    bool operator>(const FloatXUnpacked &rhs) const
-    {
-        return rhs < *this;
     }
 
     bool sign_;
@@ -769,6 +764,13 @@ public:
         return unpacked == rhs;
     }
 
+    bool operator!=(const FloatXUnpacked<nbits, ebits> &rhs) const
+    {
+        FloatXUnpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
+        return !(unpacked == rhs);
+    }
+
     bool operator<(const FloatXUnpacked<nbits, ebits> &rhs) const
     {
         FloatXUnpacked<nbits, ebits> unpacked;
@@ -832,7 +834,7 @@ inline FloatX<nbits, ebits> ceil(const FloatXUnpacked<nbits, ebits> &a)
 {
     int integer = int(a);
     FloatXUnpacked<nbits, ebits> diff = a - FloatXUnpacked<nbits, ebits>(integer);
-    if (diff > FloatXUnpacked<nbits, ebits>(0))
+    if (FloatXUnpacked<nbits, ebits>(0) < diff)
         integer++;
     return FloatX<nbits, ebits>(integer);
 }

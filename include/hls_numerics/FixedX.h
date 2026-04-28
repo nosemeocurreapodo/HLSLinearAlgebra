@@ -63,12 +63,12 @@ public:
 
     FixedX(int c)
     {
-        bits_ = c << fbits;
+        bits_ = (ap_int<nbits>)c << fbits;
     }
 
     FixedX(unsigned int c)
     {
-        bits_ = c << fbits;
+        bits_ = (ap_int<nbits>)c << fbits;
     }
 
     FixedX(float c)
@@ -86,15 +86,18 @@ public:
         float_unpacked.decode(bits);
 
         int shift = -23 + (float_unpacked.exp_ - fbias<8>::value) + fbits;
-        ap_int<25> base = (ap_uint<2>(0b01), float_unpacked.mant_);
+        ap_int<25 + nbits> base = (ap_uint<2>(0b01), float_unpacked.mant_);
         if (float_unpacked.sign_)
             base = -base;
-        ap_int<nbits> fixed;
-        if (shift >= 0)
-            fixed = base << shift;
-        else
-            fixed = base >> (-shift);
-        bits_ = fixed;
+
+        base = base << shift;
+        bits_ = base;
+        // ap_int<nbits> fixed;
+        // if (shift >= 0)
+        //     fixed = base << shift;
+        // else
+        //     fixed = base >> (-shift);
+        // bits_ = fixed;
     }
 
     FixedX(double c)
@@ -112,22 +115,35 @@ public:
         float_unpacked.decode(bits);
 
         int shift = -52 + (float_unpacked.exp_ - fbias<11>::value) + fbits;
-        ap_int<54> base = (ap_uint<2>(0b01), float_unpacked.mant_);
+        ap_int<54 + nbits> base = (ap_uint<2>(0b01), float_unpacked.mant_);
         if (float_unpacked.sign_)
             base = -base;
-        ap_int<nbits> fixed;
-        if (shift >= 0)
-            fixed = base << shift;
-        else
-            fixed = base >> (-shift);
-        bits_ = fixed;
+
+        base = base << shift;
+        bits_ = base;
+
+        // ap_int<nbits> fixed;
+        // if (shift >= 0)
+        //     fixed = base << shift;
+        // else
+        //     fixed = base >> (-shift);
+        // bits_ = fixed;
     }
 
     template <int out_nbits>
     operator ap_int<out_nbits>() const
     {
-        ap_int<out_nbits> res = bits_ >> fbits;
+        ap_int<out_nbits> res = (ap_int<out_nbits>)bits_ >> fbits;
         return res;
+    }
+
+    operator unsigned int() const
+    {
+        int res = bits_;
+        if (res < 0)
+            res = -res;
+        res = res >> fbits;
+        return (unsigned int)res;
     }
 
     operator int() const
@@ -158,10 +174,10 @@ public:
         float_unpacked.exp_ = -fbits + nbits - shift + fbias<8>::value - 1;
         float_unpacked.mant_ = 0;
 
-        if (nbits <= 24)
-            float_unpacked.mant_(23, 24 - nbits) = abs_bits;
+        if (nbits <= 23)
+            float_unpacked.mant_(22, 23 - nbits) = abs_bits;
         else
-            float_unpacked.mant_ = abs_bits(nbits - 1, nbits - 24);
+            float_unpacked.mant_ = abs_bits(nbits - 1, nbits - 23);
         ap_uint<32> bits = float_unpacked.encode();
 
         // float fresult = *reinterpret_cast<float *>(&bits);
@@ -194,7 +210,7 @@ public:
         float_unpacked.mant_ = 0;
 
         if (nbits <= 52)
-            float_unpacked.mant_(51, 52 - nbits) = abs_bits;
+            float_unpacked.mant_(51, 52 - nbits) = abs_bits(nbits - 1, 0);
         else
             float_unpacked.mant_ = abs_bits(nbits - 1, nbits - 52);
         ap_uint<64> bits = float_unpacked.encode();
@@ -208,25 +224,27 @@ public:
     {
         // #pragma HLS INLINE off
 
-        ap_int<nbits + 1> res = bits_ + rhs.bits_;
-        return FixedX<nbits + 1, ibits + 1>(res);
+        FixedX<nbits + 1, ibits + 1> res;
+        res.bits_ = bits_ + rhs.bits_;
+        return res;
     }
 
     FixedX<nbits + 1, ibits + 1> operator-(const FixedX &rhs) const
     {
         // #pragma HLS INLINE off
 
-        ap_int<nbits + 1> res = bits_ - rhs.bits_;
-        return FixedX<nbits + 1, ibits + 1>(res);
+        FixedX<nbits + 1, ibits + 1> res;
+        res.bits_ = bits_ - rhs.bits_;
+        return res;
     }
 
     template <int in_nbits, int in_ibits>
     FixedX<nbits + in_nbits, ibits + in_ibits> operator*(const FixedX<in_nbits, in_ibits> &rhs) const
     {
         // #pragma HLS INLINE off
-
-        ap_int<nbits + in_nbits> res = bits_ * rhs.bits_;
-        return FixedX<nbits + in_nbits, ibits + in_ibits>(res);
+        FixedX<nbits + in_nbits, ibits + in_ibits> res;
+        res.bits_ = bits_ * rhs.bits_;
+        return res;
     }
 
     /*
@@ -242,18 +260,19 @@ public:
     FixedX<nbits, ibits> operator/(const FixedX &rhs) const
     {
         // #pragma HLS INLINE off
-
+        FixedX<nbits, ibits> res;
         ap_int<nbits * 2> num = (ap_int<nbits * 2>)bits_ << fbits;
-        ap_int<nbits> res = num / rhs.bits_;
-        return FixedX<nbits, ibits>(res);
+        res.bits_ = num / rhs.bits_;
+        return res;
     }
 
     FixedX operator-() const
     {
         // #pragma HLS INLINE off
 
-        ap_int<nbits> res = -bits_;
-        return FixedX(res);
+        FixedX res;
+        res.bits_ = -bits_;
+        return res;
     }
 
     template <int in_nbits, int in_ibits>
@@ -289,6 +308,11 @@ public:
     bool operator==(const FixedX &rhs) const
     {
         return bits_ == rhs.bits_;
+    }
+
+    bool operator!=(const FixedX &rhs) const
+    {
+        return bits_ != rhs.bits_;
     }
 
     bool operator<(const FixedX &rhs) const

@@ -7,7 +7,7 @@
 #include "../test_common.h"
 #include "common.h"
 
-extern "C" void top(double in_a, double in_b, double out[10]);
+extern "C" void top(double in_a, double in_b, double out[20]);
 
 int main()
 {
@@ -29,14 +29,14 @@ int main()
                   << ": " << a_str << "  " << b_str << std::endl;
 
         // Software (golden) result
-        double sw_result[10];
+        double sw_result[64];
         test<double>(a, b, sw_result);
 
         // Hardware (HLS) result
-        double hw_result[10];
+        double hw_result[64];
         top(a, b, hw_result);
 
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 64; i++)
         {
             double error = std::fabs(sw_result[i] - hw_result[i]);
             if(sw_result[i] != 0)
