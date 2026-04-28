@@ -520,6 +520,11 @@ public:
         return false;
     }
 
+    bool operator>(const FloatXUnpacked &rhs) const
+    {
+        return rhs < *this;
+    }
+
     bool sign_;
     ap_uint<ebits> exp_;
     ap_uint<fbits> mant_;
@@ -823,11 +828,11 @@ inline FloatX<nbits, ebits> floor(const FloatX<nbits, ebits> &a)
 }
 
 template <int nbits, int ebits>
-inline FloatX<nbits, ebits> ceil(const FloatX<nbits, ebits> &a)
+inline FloatX<nbits, ebits> ceil(const FloatXUnpacked<nbits, ebits> &a)
 {
     int integer = int(a);
-    FloatX<nbits, ebits> diff = a - FloatX<nbits, ebits>(integer);
-    if (diff > FloatX<nbits, ebits>(0.0))
+    FloatXUnpacked<nbits, ebits> diff = a - FloatXUnpacked<nbits, ebits>(integer);
+    if (diff > FloatXUnpacked<nbits, ebits>(0))
         integer++;
     return FloatX<nbits, ebits>(integer);
 }

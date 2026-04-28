@@ -566,6 +566,20 @@ public:
         exp_ = in_exp.range(ebits - 1, 0);
     }
 
+    template <int onbits>
+    operator ap_int<onbits>() const
+    {
+#pragma HLS INLINE off
+
+        ap_int<ebits + m_kbits> exp = getTotalExp();
+        ap_int<onbits> res = (ap_uint<2>(0b01), mant_) << exp;
+        if (sign_)
+        {
+            res = -res;
+        }
+        return res;
+    }
+
     posit_unpacked operator+(const posit_unpacked &rhs) const
     {
 #pragma HLS INLINE off
@@ -1089,6 +1103,31 @@ public:
         return *this;
     }
 
+    Posit(const posit_unpacked<nbits, ebits> &c)
+    {
+#pragma HLS INLINE off
+        bits_ = c.encode();
+    }
+
+    operator posit_unpacked<nbits, ebits>() const
+    {
+#pragma HLS INLINE off
+
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
+        return unpacked;
+    }
+
+    template <int inbits>
+    Posit(ap_int<inbits> c)
+    {
+#pragma HLS INLINE off
+
+        FloatXUnpacked<32, 8> float_unpacked(c);
+        posit_unpacked<nbits, ebits> unpacked(float_unpacked);
+        bits_ = unpacked.encode();
+    }
+
     Posit(int c)
     {
 #pragma HLS INLINE off
@@ -1120,10 +1159,14 @@ public:
         bits_ = unpacked.encode();
     }
 
-    Posit(const posit_unpacked<nbits, ebits> &c)
+    template <int onbits>
+    operator ap_int<onbits>() const
     {
 #pragma HLS INLINE off
-        bits_ = c.encode();
+
+        posit_unpacked<nbits, ebits> unpacked;
+        unpacked.decode(bits_);
+        return ap_int<onbits>(unpacked);
     }
 
     operator int() const
@@ -1182,15 +1225,6 @@ public:
         return bitcast_f64(bits);
     }
 
-    operator posit_unpacked<nbits, ebits>() const
-    {
-#pragma HLS INLINE off
-
-        posit_unpacked<nbits, ebits> unpacked;
-        unpacked.decode(bits_);
-        return unpacked;
-    }
-
     /*
     template <int fnbits, int fibits>
     operator ap_fixed<fnbits, fibits>() const
@@ -1214,60 +1248,6 @@ public:
             }
             return res;
         }
-    }
-    */
-
-    /*
-    bool operator<(const Posit &rhs) const
-    {
-        posit_unpacked<kbits, ebits, fbits> in1, in2;
-        in1.template decode<nbits, ebits>(bits_);
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        return posit_lessthan(in1, in2);
-    }
-
-    bool operator>(const Posit &rhs) const
-    {
-        posit_unpacked<kbits, ebits, fbits> in1, in2;
-        in1.template decode<nbits, ebits>(bits_);
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        return posit_morethan(in1, in2);
-    }
-
-    bool operator<=(const Posit &rhs) const
-    {
-        posit_unpacked<kbits, ebits, fbits> in1, in2;
-        in1.template decode<nbits, ebits>(bits_);
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        return posit_lesseqthan(in1, in2);
-    }
-
-    bool operator>=(const Posit &rhs) const
-    {
-        posit_unpacked<kbits, ebits, fbits> in1, in2;
-        in1.template decode<nbits, ebits>(bits_);
-        in2.template decode<nbits, ebits>(rhs.bits_);
-
-        return posit_moreeqthan(in1, in2);
-    }
-
-    bool operator==(const Posit &rhs) const
-    {
-        if (bits_ == rhs.bits_)
-            return true;
-        else
-            return false;
-    }
-
-    bool operator!=(const Posit &rhs) const
-    {
-        if (bits_ != rhs.bits_)
-            return true;
-        else
-            return false;
     }
     */
 
@@ -1360,6 +1340,50 @@ public:
         aux = aux / rhs;
         bits_ = aux.encode();
         return *this;
+    }
+
+    bool operator<(const posit_unpacked<nbits, ebits> &rhs) const
+    {
+        posit_unpacked<nbits, ebits> aux;
+        aux.decode(bits_);
+        return posit_lessthan(aux, rhs);
+    }
+
+    bool operator>(const posit_unpacked<nbits, ebits> &rhs) const
+    {
+        posit_unpacked<nbits, ebits> aux;
+        aux.decode(bits_);
+        return posit_morethan(aux, rhs);
+    }
+
+    bool operator<=(const posit_unpacked<nbits, ebits> &rhs) const
+    {
+        posit_unpacked<nbits, ebits> aux;
+        aux.decode(bits_);
+        return posit_lesseqthan(aux, rhs);
+    }
+
+    bool operator>=(const posit_unpacked<nbits, ebits> &rhs) const
+    {
+        posit_unpacked<nbits, ebits> aux;
+        aux.decode(bits_);
+        return posit_moreeqthan(aux, rhs);
+    }
+
+    bool operator==(const Posit &rhs) const
+    {
+        if (bits_ == rhs.bits_)
+            return true;
+        else
+            return false;
+    }
+
+    bool operator!=(const Posit &rhs) const
+    {
+        if (bits_ != rhs.bits_)
+            return true;
+        else
+            return false;
     }
 
     /*
