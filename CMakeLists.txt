@@ -20,6 +20,32 @@ include(FetchContent)
 find_package(Eigen3 3.3 REQUIRED NO_MODULE)
 message(STATUS "Found Eigen3: ${Eigen3_DIR}")
 
+find_path(SUITESPARSE_INCLUDE_DIR
+    NAMES cholmod.h
+    PATHS /usr/include/suitesparse
+)
+
+find_library(CHOLMOD_LIB cholmod)
+find_library(AMD_LIB amd)
+find_library(COLAMD_LIB colamd)
+find_library(CAMD_LIB camd)
+find_library(CCOLAMD_LIB ccolamd)
+find_library(SUITESPARSECONFIG_LIB suitesparseconfig)
+
+set(SUITESPARSE_LIBS
+    ${CHOLMOD_LIB}
+    ${AMD_LIB}
+    ${COLAMD_LIB}
+    ${CAMD_LIB}
+    ${CCOLAMD_LIB}
+    ${SUITESPARSECONFIG_LIB}
+)
+
+find_package(BLAS REQUIRED)
+find_package(LAPACK REQUIRED)
+# LAPACKE is commonly separate:
+find_library(LAPACKE_LIB lapacke REQUIRED)
+
 # Create header-only library for unified linear algebra (CPU + FPGA compatible)
 add_library(linalg INTERFACE)
 target_include_directories(linalg INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)

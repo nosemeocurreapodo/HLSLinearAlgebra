@@ -37,6 +37,15 @@ static bool check_rel_error(const std::string &name, double expected, double act
 
 int main()
 {
+    // Print which numeric format this build is testing
+#if defined(FORMAT_POSIT)
+    std::cout << "--- Starting Posit Determinant Test ---" << std::endl;
+#elif defined(FORMAT_FLOAT)
+    std::cout << "--- Starting native float Determinant Test ---" << std::endl;
+#else
+    std::cout << "--- Starting FloatX Determinant Test ---" << std::endl;
+#endif
+
     int errors = 0;
 
     // 0: determinant

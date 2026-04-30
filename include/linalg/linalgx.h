@@ -1,41 +1,70 @@
-
 #pragma once
 
-#include <cassert> // for assert
-#include <memory>  // for unique_ptr
+#include <vector>
+#include <utility>
+#include <type_traits>
 
-#include "common.h"
-// #include <cmath>
+#include "linalg/linalgview.h"
 
 namespace linalg
 {
-    //============================================================
-    // Basic fixed-size matrix class
-    //============================================================
-
     template <typename Type>
-    class Matx
+    class Matx : public MatView<Type>
     {
     public:
+        using Base = MatView<Type>;
+        using value_type = Type;
+
+        using Base::operator();
+        using Base::addInPlace;
+        using Base::cols;
+        using Base::copyTo;
+        using Base::data;
+        using Base::div;
+        using Base::divInPlace;
+        using Base::dot;
+        using Base::matadd;
+        using Base::matmul;
+        using Base::matsqrt;
+        using Base::matsub;
+        using Base::negate;
+        using Base::norm;
+        using Base::rows;
+        using Base::scale;
+        using Base::scaleInPlace;
+        using Base::setIdentity;
+        using Base::setZero;
+        using Base::size;
+        using Base::squaredNorm;
+        using Base::subInPlace;
+
         Matx()
-            : data_(nullptr), rows_(0), cols_(0)
+            : Base(), storage_(), rows_(0), cols_(0)
         {
+            rebind_();
         }
 
         Matx(int rows, int cols)
-            : data_(rows * cols > 0 ? std::make_unique<Type[]>(rows * cols) : nullptr), rows_(rows), cols_(cols)
+            : Base(), storage_(rows * cols), rows_(rows), cols_(cols)
         {
+            LINALG_ASSERT(rows >= 0);
+            LINALG_ASSERT(cols >= 0);
+            rebind_();
         }
 
         Matx(const Matx &other)
-            : Matx(other.rows_, other.cols_)
+            : Base(), storage_(other.storage_), rows_(other.rows_), cols_(other.cols_)
         {
-            if (data_)
-            {
-                std::copy(other.data_.get(),
-                          other.data_.get() + rows_ * cols_,
-                          data_.get());
-            }
+            rebind_();
+        }
+
+        Matx(Matx &&other) noexcept
+            : Base(), storage_(std::move(other.storage_)), rows_(other.rows_), cols_(other.cols_)
+        {
+            rebind_();
+            other.rows_ = 0;
+            other.cols_ = 0;
+            other.Base::bind(nullptr, 0, 0);
         }
 
         Matx &operator=(const Matx &other)
@@ -43,317 +72,561 @@ namespace linalg
             if (this == &other)
                 return *this;
 
-            // Reallocate if size changes
-            int newSize = other.rows_ * other.cols_;
-            if (newSize != rows_ * cols_)
-            {
-                data_.reset();
-                if (newSize > 0)
-                {
-                    data_ = std::make_unique<Type[]>(newSize);
-                }
-            }
-
+            storage_ = other.storage_;
             rows_ = other.rows_;
             cols_ = other.cols_;
-
-            if (data_)
-            {
-                std::copy(other.data_.get(),
-                          other.data_.get() + rows_ * cols_,
-                          data_.get());
-            }
-
+            rebind_();
             return *this;
         }
 
-        // Matx(const Matx &) = delete;
-        // Matx &operator=(const Matx &) = delete;
-
-        void setZero()
+        Matx &operator=(Matx &&other) noexcept
         {
-            assert(rows_ * cols_ > 0);
+            if (this == &other)
+                return *this;
 
-        mat_const_other_loop:
-            for (int y = 0; y < rows_; y++)
-            {
-            mat_const_other_loop_x:
-                for (int x = 0; x < cols_; x++)
-                {
-                    // #pragma HLS UNROLL
-                    (*this)(y, x) = Type(0);
-                }
-            }
+            storage_ = std::move(other.storage_);
+            rows_ = other.rows_;
+            cols_ = other.cols_;
+            rebind_();
+
+            other.rows_ = 0;
+            other.cols_ = 0;
+            other.Base::bind(nullptr, 0, 0);
+            return *this;
         }
 
-        void setIdentity()
+        template <typename OtherType>
+        explicit Matx(const MatView<OtherType> &other)
+            : Base(), storage_(other.rows() * other.cols()), rows_(other.rows()), cols_(other.cols())
         {
-            assert(rows_ == cols_);
-            assert(rows_ * cols_ > 0);
+            rebind_();
+            this->copyFrom(other);
+        }
 
-            setZero();
-            for (int i = 0; i < cols_; i++)
-                (*this)(i, i) = Type(1);
+        template <typename OtherType>
+        Matx &operator=(const MatView<OtherType> &other)
+        {
+            resize(other.rows(), other.cols());
+            this->copyFrom(other);
+            return *this;
         }
 
         static Matx Zero(int rows, int cols)
         {
-            Matx result(rows, cols);
-            for (int i = 0; i < rows * cols; i++)
-                result.data_[i] = Type(0);
-            return result;
+            Matx out(rows, cols);
+            out.setZero();
+            return out;
         }
 
         static Matx Identity(int rows, int cols)
         {
-            assert(rows == cols);
-
-            Matx result = Zero(rows, cols);
-            for (int i = 0; i < rows; i++)
-                result(i, i) = Type(1);
-            return result;
+            Matx out(rows, cols);
+            out.setZero();
+            const int n = (rows < cols) ? rows : cols;
+            for (int i = 0; i < n; ++i)
+                out(i, i) = Type(1);
+            return out;
         }
 
-        Matx<Type> transpose() const
+        void resize(int rows, int cols)
         {
-            Matx<Type> result = Zero(cols_, rows_);
-            for (int r = 0; r < rows_; r++)
-                for (int c = 0; c < cols_; c++)
-                    result(c, r) = (*this)(r, c);
-            return result;
+            LINALG_ASSERT(rows >= 0);
+            LINALG_ASSERT(cols >= 0);
+
+            rows_ = rows;
+            cols_ = cols;
+            storage_.resize(rows * cols);
+            rebind_();
         }
 
-        template <typename Type2>
-        Matx<Type> operator*(const Matx<Type2> &rhs) const
+        void swap(Matx &other) noexcept
         {
-            assert(cols_ == rhs.rows());
+            storage_.swap(other.storage_);
+            std::swap(rows_, other.rows_);
+            std::swap(cols_, other.cols_);
+            rebind_();
+            other.rebind_();
+        }
 
-            Matx<Type> result = Matx<Type>::Zero(rows_, rhs.cols());
-            for (int r = 0; r < rows_; r++)
+        MatView<Type> asView()
+        {
+            return MatView<Type>(storage_.data(), rows_, cols_);
+        }
+
+        const MatView<Type> asView() const
+        {
+            return MatView<Type>(const_cast<Type *>(storage_.data()), rows_, cols_);
+        }
+
+        template <typename OtherType>
+        void copyFrom(const MatView<OtherType> &other)
+        {
+            LINALG_ASSERT(rows_ == other.rows());
+            LINALG_ASSERT(cols_ == other.cols());
+
+        copy_loop_c:
+            for (int c = 0; c < cols_; ++c)
             {
-                for (int c = 0; c < rhs.cols(); c++)
+            copy_loop_r:
+                for (int r = 0; r < rows_; ++r)
                 {
-                    Type acc = 0.0;
-                    for (int k = 0; k < cols_; k++)
-                    {
-                        acc += (*this)(r, k) * rhs(k, c);
-                    }
-                    result(r, c) = acc;
+#pragma HLS PIPELINE II = 1
+                    (*this)(r, c) = Type(other(r, c));
                 }
             }
-            return result;
         }
 
-        Matx operator+(const Matx &other) const
+        Matx transpose()
         {
-            assert(rows_ == other.rows() && cols_ == other.cols());
-
-            Matx result(rows_, cols_);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result(r, c) = (*this)(r, c) + other(r, c);
-            return result;
+            Matx out(cols_, rows_);
+            this->transposeTo(out);
+            return out;
         }
 
-        Matx operator-(const Matx &other) const
+        // ------------------------------------------------------------
+        // In-place operators
+        // ------------------------------------------------------------
+
+        template <typename OtherType>
+        Matx &operator+=(const MatView<OtherType> &rhs)
         {
-            assert(rows_ == other.rows() && cols_ == other.cols());
-
-            Matx result(rows_, cols_);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result(r, c) = (*this)(r, c) - other(r, c);
-            return result;
+            this->addInPlace(rhs);
+            return *this;
         }
 
-        template <typename OutType, typename InType>
-        OutType conv(const Matx<InType> &rhs) const
+        template <typename OtherType>
+        Matx &operator-=(const MatView<OtherType> &rhs)
         {
-            OutType result = Type(0);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result += OutType((*this)(r, c) * rhs(r, c));
-            return result;
+            this->subInPlace(rhs);
+            return *this;
         }
 
-        template <typename Type2>
-        Type dot(const Matx<Type2> &rhs)
+        template <typename ScalarType>
+        Matx &operator*=(ScalarType s)
         {
-            assert(rows_ == rhs.rows() && cols_ == rhs.cols());
-
-            Type result = Type(0);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result += (*this)(r, c) * rhs(r, c);
-            return result;
+            static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
+                          "Matx::operator*= requires a scalar type");
+            this->scaleInPlace(s);
+            return *this;
         }
 
-        void operator+=(const Matx &other)
+        template <typename ScalarType>
+        Matx &operator/=(ScalarType s)
         {
-            assert(rows_ == other.rows() && cols_ == other.cols());
-
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    (*this)(r, c) = (*this)(r, c) + other(r, c);
+            static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
+                          "Matx::operator/= requires a scalar type");
+            this->divInPlace(s);
+            return *this;
         }
 
-        template <typename Type2>
-        void operator*=(const Type2 &s)
+    private:
+        void rebind_()
         {
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    (*this)(r, c) = (*this)(r, c) * s;
+            Type *ptr = storage_.empty() ? nullptr : storage_.data();
+            Base::bind(ptr, rows_, cols_);
         }
 
-        Matx operator-() const
-        {
-            Matx result(rows_, cols_);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result(r, c) = -(*this)(r, c);
-            return result;
-        }
-
-        Matx sqrt()
-        {
-            Matx result(rows_, cols_);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    result(r, c) = std::sqrt((*this)(r, c));
-            return result;
-        }
-
-        // Frobenius norm
-        Type norm() const
-        {
-            Type sum = Type(0);
-            for (int c = 0; c < cols_; c++)
-                for (int r = 0; r < rows_; r++)
-                    sum += (*this)(r, c) * (*this)(r, c);
-            return std::sqrt(sum);
-        }
-
-        // Element accessors (row, col)
-        Type &operator()(int r, int c)
-        {
-            //  column major
-            //   int add = r * _cols + c;
-            //  row major
-            int add = c * rows_ + r;
-
-            return get_(add);
-        }
-
-        Type operator()(int r, int c) const
-        {
-            //  column major
-            //  int add = r * _cols + c;
-            //  row major
-            int add = c * rows_ + r;
-
-            return get_(add);
-        }
-
-        Type *data()
-        {
-            return data_.get();
-        }
-
-        const Type *data() const
-        {
-            return data_.get();
-        }
-
-        // Dimension accessors
-        int rows() const { return rows_; }
-        int cols() const { return cols_; }
-        int size() const { return rows_ * cols_; }
-
-    protected:
-        Type &get_(int add)
-        {
-            return data_[add];
-        }
-
-        Type get_(int add) const
-        {
-            return data_[add];
-        }
-
-        std::unique_ptr<Type[]> data_;
-        int rows_, cols_;
+        std::vector<Type> storage_;
+        int rows_;
+        int cols_;
     };
 
-    template <typename Type>
-    Matx<Type> operator*(const Matx<Type> &m, Type s)
+    // ============================================================
+    // Matx binary operators
+    // ============================================================
+
+    template <typename LType, typename RType>
+    Matx<promote_t<LType, RType>>
+    operator+(const MatView<LType> &lhs, const MatView<RType> &rhs)
     {
-        Matx<Type> result(m.rows(), m.cols());
-        for (int c = 0; c < m.cols(); c++)
-            for (int r = 0; r < m.rows(); r++)
-                result(r, c) = m(r, c) * s;
-        return result;
+        using OutType = promote_t<LType, RType>;
+        LINALG_ASSERT(lhs.rows() == rhs.rows());
+        LINALG_ASSERT(lhs.cols() == rhs.cols());
+
+        Matx<OutType> out(lhs.rows(), lhs.cols());
+        lhs.matadd(rhs, out);
+        return out;
+    }
+
+    template <typename LType, typename RType>
+    Matx<promote_t<LType, RType>>
+    operator-(const MatView<LType> &lhs, const MatView<RType> &rhs)
+    {
+        using OutType = promote_t<LType, RType>;
+        LINALG_ASSERT(lhs.rows() == rhs.rows());
+        LINALG_ASSERT(lhs.cols() == rhs.cols());
+
+        Matx<OutType> out(lhs.rows(), lhs.cols());
+        lhs.matsub(rhs, out);
+        return out;
     }
 
     template <typename Type>
-    Matx<Type> operator*(Type s, const Matx<Type> &m)
+    Matx<Type> operator-(const MatView<Type> &mat)
     {
-        return m * s;
+        Matx<Type> out(mat.rows(), mat.cols());
+        mat.negate(out);
+        return out;
     }
 
-    template <typename Type>
-    Matx<Type> operator/(const Matx<Type> &m, Type s)
+    // Matrix-matrix multiply
+    template <typename LType, typename RType>
+    Matx<promote_t<LType, RType>>
+    operator*(const MatView<LType> &lhs, const MatView<RType> &rhs)
     {
-        Matx<Type> result(m.rows(), m.cols());
-        for (int c = 0; c < m.cols(); c++)
-            for (int r = 0; r < m.rows(); r++)
-                result(r, c) = m(r, c) / s;
-        return result;
+        using OutType = promote_t<LType, RType>;
+        LINALG_ASSERT(lhs.cols() == rhs.rows());
+
+        Matx<OutType> out(lhs.rows(), rhs.cols());
+        lhs.matmul(rhs, out);
+        return out;
     }
+
+    // Matrix-scalar
+    template <typename Type, typename ScalarType,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Matx<promote_t<Type, typename std::decay<ScalarType>::type>>
+    operator*(const MatView<Type> &mat, ScalarType s)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Matx<OutType> out(mat.rows(), mat.cols());
+        mat.scale(s, out);
+        return out;
+    }
+
+    template <typename ScalarType, typename Type,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Matx<promote_t<Type, typename std::decay<ScalarType>::type>>
+    operator*(ScalarType s, const MatView<Type> &mat)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Matx<OutType> out(mat.rows(), mat.cols());
+        mat.scale(s, out);
+        return out;
+    }
+
+    template <typename Type, typename ScalarType,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Matx<promote_t<Type, typename std::decay<ScalarType>::type>>
+    operator/(const MatView<Type> &mat, ScalarType s)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Matx<OutType> out(mat.rows(), mat.cols());
+        mat.div(s, out);
+        return out;
+    }
+
+    // ============================================================
+    // Vecx
+    // ============================================================
 
     template <typename Type, VecOrient Orient = VecOrient::Column>
-    class Vecx : public Matx<Type>
+    class Vecx : public VecView<Type, Orient>
     {
     public:
-        using Base = Matx<Type>;
+        using Base = VecView<Type, Orient>;
+        using value_type = Type;
 
-        Vecx() : Base() {}
-        Vecx(int size) : Base((Orient == VecOrient::Column ? size : 1),
-                              (Orient == VecOrient::Column ? 1 : size))
+        using Base::operator();
+        using Base::copyTo;
+        using Base::data;
+        using Base::dot;
+        using Base::length;
+        using Base::norm;
+        using Base::setConstant;
+        using Base::setZero;
+        using Base::size;
+        using Base::squaredNorm;
+
+        Vecx()
+            : Base(), storage_(), size_(0)
         {
+            rebind_();
         }
-        Vecx(const Base &mat) : Base(mat)
+
+        explicit Vecx(int size)
+            : Base(), storage_(size), size_(size)
         {
+            LINALG_ASSERT(size >= 0);
+            rebind_();
+        }
+
+        Vecx(const Vecx &other)
+            : Base(), storage_(other.storage_), size_(other.size_)
+        {
+            rebind_();
+        }
+
+        Vecx(Vecx &&other) noexcept
+            : Base(), storage_(std::move(other.storage_)), size_(other.size_)
+        {
+            rebind_();
+            other.size_ = 0;
+            other.Base::bind(nullptr, 0);
+        }
+
+        Vecx &operator=(const Vecx &other)
+        {
+            if (this == &other)
+                return *this;
+
+            storage_ = other.storage_;
+            size_ = other.size_;
+            rebind_();
+            return *this;
+        }
+
+        Vecx &operator=(Vecx &&other) noexcept
+        {
+            if (this == &other)
+                return *this;
+
+            storage_ = std::move(other.storage_);
+            size_ = other.size_;
+            rebind_();
+
+            other.size_ = 0;
+            other.Base::bind(nullptr, 0);
+            return *this;
+        }
+
+        template <typename OtherType, VecOrient OtherOrient>
+        explicit Vecx(const VecView<OtherType, OtherOrient> &other)
+            : Base(), storage_(other.size()), size_(other.size())
+        {
+            static_assert(OtherOrient == Orient, "Vector orientation mismatch");
+            rebind_();
+            copyFrom(other);
+        }
+
+        template <typename OtherType, VecOrient OtherOrient>
+        Vecx &operator=(const VecView<OtherType, OtherOrient> &other)
+        {
+            static_assert(OtherOrient == Orient, "Vector orientation mismatch");
+            resize(other.size());
+            copyFrom(other);
+            return *this;
         }
 
         static Vecx Zero(int size)
         {
-            Vecx result(size);
-            for (int i = 0; i < size; i++)
-                result(i) = Type(0);
-            return result;
+            Vecx out(size);
+            out.setZero();
+            return out;
         }
 
-        // 1D indexing, orientation-agnostic
-        Type &operator()(int i)
+        void resize(int size)
         {
-#pragma HLS inline
-            return this->get_(i);
+            LINALG_ASSERT(size >= 0);
+            storage_.resize(size);
+            size_ = size;
+            rebind_();
         }
 
-        Type operator()(int i) const
+        void swap(Vecx &other) noexcept
         {
-#pragma HLS inline
-            return this->get_(i);
+            storage_.swap(other.storage_);
+            std::swap(size_, other.size_);
+            rebind_();
+            other.rebind_();
         }
 
-        Type dot(Vecx &rhs)
+        template <typename OtherType, VecOrient OtherOrient>
+        void copyFrom(const VecView<OtherType, OtherOrient> &other)
         {
-            Type acc = Type(0);
-            for (int i = 0; i < this->size(); i++)
-                acc += (*this)(i)*rhs(i);
-            return acc;
+            static_assert(OtherOrient == Orient, "Vector orientation mismatch");
+            LINALG_ASSERT(size_ == other.size());
+
+        copy_vec_loop:
+            for (int i = 0; i < size_; ++i)
+            {
+#pragma HLS PIPELINE II = 1
+                (*this)(i) = Type(other(i));
+            }
+        }
+
+        // ------------------------------------------------------------
+        // In-place operators
+        // ------------------------------------------------------------
+
+        template <typename OtherType>
+        Vecx &operator+=(const VecView<OtherType, Orient> &rhs)
+        {
+            LINALG_ASSERT(size_ == rhs.size());
+
+        vadd_ip_loop:
+            for (int i = 0; i < size_; ++i)
+            {
+#pragma HLS PIPELINE II = 1
+                (*this)(i) += Type(rhs(i));
+            }
+            return *this;
+        }
+
+        template <typename OtherType>
+        Vecx &operator-=(const VecView<OtherType, Orient> &rhs)
+        {
+            LINALG_ASSERT(size_ == rhs.size());
+
+        vsub_ip_loop:
+            for (int i = 0; i < size_; ++i)
+            {
+#pragma HLS PIPELINE II = 1
+                (*this)(i) -= Type(rhs(i));
+            }
+            return *this;
+        }
+
+        template <typename ScalarType>
+        Vecx &operator*=(ScalarType s)
+        {
+            static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
+                          "Vecx::operator*= requires a scalar type");
+
+        vscale_ip_loop:
+            for (int i = 0; i < size_; ++i)
+            {
+#pragma HLS PIPELINE II = 1
+                (*this)(i) = Type((*this)(i)*Type(s));
+            }
+            return *this;
+        }
+
+        template <typename ScalarType>
+        Vecx &operator/=(ScalarType s)
+        {
+            static_assert(is_scalar<typename std::decay<ScalarType>::type>::value,
+                          "Vecx::operator/= requires a scalar type");
+
+        vdiv_ip_loop:
+            for (int i = 0; i < size_; ++i)
+            {
+#pragma HLS PIPELINE II = 1
+                (*this)(i) = Type((*this)(i) / Type(s));
+            }
+            return *this;
         }
 
     private:
+        void rebind_()
+        {
+            Type *ptr = storage_.empty() ? nullptr : storage_.data();
+            Base::bind(ptr, size_);
+        }
+
+        std::vector<Type> storage_;
+        int size_;
     };
-}
+
+    // ============================================================
+    // Vecx binary operators
+    // ============================================================
+
+    template <typename LType, typename RType, VecOrient Orient>
+    Vecx<promote_t<LType, RType>, Orient>
+    operator+(const VecView<LType, Orient> &lhs, const VecView<RType, Orient> &rhs)
+    {
+        using OutType = promote_t<LType, RType>;
+        LINALG_ASSERT(lhs.size() == rhs.size());
+
+        Vecx<OutType, Orient> out(lhs.size());
+
+    vadd_loop:
+        for (int i = 0; i < lhs.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = OutType(lhs(i)) + OutType(rhs(i));
+        }
+
+        return out;
+    }
+
+    template <typename LType, typename RType, VecOrient Orient>
+    Vecx<promote_t<LType, RType>, Orient>
+    operator-(const VecView<LType, Orient> &lhs, const VecView<RType, Orient> &rhs)
+    {
+        using OutType = promote_t<LType, RType>;
+        LINALG_ASSERT(lhs.size() == rhs.size());
+
+        Vecx<OutType, Orient> out(lhs.size());
+
+    vsub_loop:
+        for (int i = 0; i < lhs.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = OutType(lhs(i)) - OutType(rhs(i));
+        }
+
+        return out;
+    }
+
+    template <typename Type, VecOrient Orient>
+    Vecx<Type, Orient> operator-(const VecView<Type, Orient> &vec)
+    {
+        Vecx<Type, Orient> out(vec.size());
+
+    vneg_loop:
+        for (int i = 0; i < vec.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = -Type(vec(i));
+        }
+
+        return out;
+    }
+
+    template <typename Type, typename ScalarType, VecOrient Orient,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Vecx<promote_t<Type, typename std::decay<ScalarType>::type>, Orient>
+    operator*(const VecView<Type, Orient> &vec, ScalarType s)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Vecx<OutType, Orient> out(vec.size());
+
+    vscale_loop:
+        for (int i = 0; i < vec.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = OutType(vec(i)) * OutType(s);
+        }
+
+        return out;
+    }
+
+    template <typename ScalarType, typename Type, VecOrient Orient,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Vecx<promote_t<Type, typename std::decay<ScalarType>::type>, Orient>
+    operator*(ScalarType s, const VecView<Type, Orient> &vec)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Vecx<OutType, Orient> out(vec.size());
+
+    vscale_loop2:
+        for (int i = 0; i < vec.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = OutType(vec(i)) * OutType(s);
+        }
+
+        return out;
+    }
+
+    template <typename Type, typename ScalarType, VecOrient Orient,
+              typename std::enable_if<is_scalar<typename std::decay<ScalarType>::type>::value, int>::type = 0>
+    Vecx<promote_t<Type, typename std::decay<ScalarType>::type>, Orient>
+    operator/(const VecView<Type, Orient> &vec, ScalarType s)
+    {
+        using OutType = promote_t<Type, typename std::decay<ScalarType>::type>;
+        Vecx<OutType, Orient> out(vec.size());
+
+    vdiv_loop:
+        for (int i = 0; i < vec.size(); ++i)
+        {
+#pragma HLS PIPELINE II = 1
+            out(i) = OutType(vec(i)) / OutType(s);
+        }
+
+        return out;
+    }
+
+} // namespace linalg

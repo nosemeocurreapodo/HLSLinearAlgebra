@@ -28,18 +28,28 @@ extern "C" void top(double in_0,
 
 #pragma HLS PIPELINE
 
-    // linalg::Mat3<float> M(in_a);
+    // Select scalar type via compile-time defines:
+    // -DFORMAT_POSIT -> use Posit<32,3>
+    // -DFORMAT_FLOAT -> use native float
+    // (default)       -> use FloatX<32,8>
+#if defined(FORMAT_POSIT)
+    using Scalar = Posit<32, 3>;
+#elif defined(FORMAT_FLOAT)
+    using Scalar = float;
+#else
+    using Scalar = FloatX<32, 8>;
+#endif
 
-    linalg::Mat3<float> M;
-    M(0, 0) = in_0;
-    M(0, 1) = in_1;
-    M(0, 2) = in_2;
-    M(1, 0) = in_3;
-    M(1, 1) = in_4;
-    M(1, 2) = in_5;
-    M(2, 0) = in_6;
-    M(2, 1) = in_7;
-    M(2, 2) = in_8;
+    linalg::Mat3<Scalar> M;
+    M(0, 0) = (Scalar)in_0;
+    M(0, 1) = (Scalar)in_1;
+    M(0, 2) = (Scalar)in_2;
+    M(1, 0) = (Scalar)in_3;
+    M(1, 1) = (Scalar)in_4;
+    M(1, 2) = (Scalar)in_5;
+    M(2, 0) = (Scalar)in_6;
+    M(2, 1) = (Scalar)in_7;
+    M(2, 2) = (Scalar)in_8;
 
     out = (double)M.determinant();
 }
