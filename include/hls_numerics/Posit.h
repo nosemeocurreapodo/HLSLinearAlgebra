@@ -1152,6 +1152,14 @@ public:
         bits_ = unpacked.encode();
     }
 
+    Posit(unsigned int c)
+    {
+        // #pragma HLS INLINE off
+
+        posit_unpacked<nbits, ebits> unpacked(c);
+        bits_ = unpacked.encode();
+    }
+
     Posit(float c)
     {
         // #pragma HLS INLINE off

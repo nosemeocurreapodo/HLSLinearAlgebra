@@ -32,18 +32,20 @@ public:
         zero_ = other.zero_;
         inf_ = other.inf_;
         sign_ = other.sign_;
+        nan_ = other.nan_;
         exp_ = exp(ebits - 1, 0);
+        mant_ = 0;
         if (fbits >= other.fbits)
         {
             // no rounding needed
             mant_(fbits - 1, fbits - other.fbits) = other.mant_(other.fbits - 1, 0);
-            mant_(fbits - other.fbits - 1, 0) = 0;
         }
         else
         {
             // round as well
-            // mant_(fbits - 1, 0) = other.mant_(ofbits - 1, ofbits - fbits);
+            mant_(fbits - 1, 0) = other.mant_(other.fbits - 1, other.fbits - fbits);
 
+            /*
             ap_uint<fbits + 2> rfrac = (ap_uint<1>(0), other.mant_(other.fbits - 1, other.fbits - fbits - 1));
             if (rfrac[0] == 1)
                 rfrac += 1;
@@ -53,6 +55,7 @@ public:
                 exp_++;
             }
             mant_(fbits - 1, 0) = rfrac(fbits, 1);
+            */
         }
     }
 
@@ -64,15 +67,14 @@ public:
         if (c == 0)
         {
             zero_ = 1;
-            inf_ = 0;
-            sign_ = 0;
-            exp_ = 0;
-            mant_ = 0;
-            return;
+        }
+        else
+        {
+            zero_ = 0;
         }
 
-        zero_ = 0;
         inf_ = 0;
+        nan_ = 0;
 
         bool psign = c < 0;
         ap_uint<in_nbits> i = hls::abs(c);
@@ -88,101 +90,27 @@ public:
     }
 
     template <int in_nbits>
-    FloatXUnpacked(ap_uint<in_nbits> c)
+    FloatXUnpacked(ap_uint<in_nbits> c) : FloatXUnpacked(ap_int<in_nbits>(c))
     {
-        // #pragma HLS inline off
-
-        if (c == 0)
-        {
-            zero_ = 1;
-            inf_ = 0;
-            sign_ = 0;
-            exp_ = 0;
-            mant_ = 0;
-            return;
-        }
-
-        zero_ = 0;
-        inf_ = 0;
-
-        ap_uint<in_nbits> i = hls::abs(c);
-        int lz = count_leading_zeros(i);
-        i = i << (lz + 1);
-
-        sign_ = 0;
-        exp_ = in_nbits - 1 - lz + fbias<ebits>::value;
-        if constexpr (fbits <= in_nbits)
-            mant_ = i(in_nbits - 1, in_nbits - fbits);
-        else
-            mant_(fbits - 1, fbits - in_nbits) = i;
     }
 
-    FloatXUnpacked(int c)
+    FloatXUnpacked(int c) : FloatXUnpacked(ap_int<32>(c))
     {
-        // #pragma HLS inline off
-
-        if (c == 0)
-        {
-            zero_ = 1;
-            inf_ = 0;
-            sign_ = 0;
-            exp_ = 0;
-            mant_ = 0;
-            return;
-        }
-
-        zero_ = 0;
-        inf_ = 0;
-
-        bool psign = c < 0;
-        ap_uint<32> i = hls::abs(c);
-        int lz = count_leading_zeros(i);
-        i = i << (lz + 1);
-
-        sign_ = psign;
-        exp_ = 31 - lz + fbias<ebits>::value;
-        if constexpr (fbits <= 32)
-            mant_ = i(31, 32 - fbits);
-        else
-            mant_(fbits - 1, fbits - 32) = i;
     }
 
-    FloatXUnpacked(unsigned int c)
+    FloatXUnpacked(unsigned int c) : FloatXUnpacked(ap_int<33>(c))
     {
-        // #pragma HLS inline off
-
-        if (c == 0)
-        {
-            zero_ = 1;
-            inf_ = 0;
-            sign_ = 0;
-            exp_ = 0;
-            mant_ = 0;
-            return;
-        }
-
-        zero_ = 0;
-        inf_ = 0;
-
-        ap_uint<32> i = c;
-        int lz = count_leading_zeros(i);
-        i = i << (lz + 1);
-
-        sign_ = 0;
-        exp_ = 31 - lz + fbias<ebits>::value;
-        if constexpr (fbits <= 32)
-            mant_ = i(31, 32 - fbits);
-        else
-            mant_(fbits - 1, fbits - 32) = i;
     }
 
     template <int in_nbits>
-    operator ap_int<in_nbits>() const
+    ap_int<in_nbits> to_ap_int() const
     {
         // #pragma HLS inline off
 
         if (zero_)
             return 0;
+        if (inf_ || nan_)
+            return ap_uint<in_nbits>(-1);
 
         int exp = exp_ - fbias<ebits>::value;
         ap_int<in_nbits> res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
@@ -197,25 +125,14 @@ public:
     {
         // #pragma HLS inline off
 
-        if (zero_)
-            return 0;
-
-        int exp = exp_ - fbias<ebits>::value;
-        int res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
-        if (sign_)
-        {
-            res = -res;
-        }
-        return res;
+        return int(to_ap_int<32>());
     }
 
     operator unsigned int() const
     {
         // #pragma HLS inline off
 
-        int exp = exp_ - fbias<ebits>::value;
-        int res = (ap_uint<2>(0b01), mant_) >> (fbits - exp);
-        return res;
+        return (unsigned int)(to_ap_int<32>());
     }
 
     /*
@@ -235,16 +152,24 @@ public:
     {
         // #pragma HLS INLINE off
 
-        if (bits == 0)
+        sign_ = bits[nbits - 1];
+        exp_ = bits(nbits - 2, fbits);
+        mant_ = bits(fbits - 1, 0);
+
+        if (exp_ == 0 && mant_ == 0)
             zero_ = 1;
         else
             zero_ = 0;
 
-        inf_ = 0;
+        if (exp_ == -1 && mant_ == 0)
+            inf_ = 1;
+        else
+            inf_ = 0;
 
-        sign_ = bits[nbits - 1];
-        exp_ = bits(nbits - 2, fbits);
-        mant_ = bits(fbits - 1, 0);
+        if (exp_ == -1 && mant_ != 0)
+            nan_ = 1;
+        else
+            nan_ = 0;
 
         // if (exp_ == ap_uint<ebits>(-1) && mant_ == 0)
         //     inf_ = 1;
@@ -258,15 +183,25 @@ public:
 
         ap_uint<nbits> bits;
 
-        if (zero_ == 1)
+        bits[nbits - 1] = sign_;
+        bits(nbits - 2, fbits) = exp_;
+        bits(fbits - 1, 0) = mant_;
+
+        if (zero_)
         {
-            bits = 0;
+            bits(nbits - 2, 0) = 0;
         }
-        else
+
+        if (inf_)
         {
-            bits[nbits - 1] = sign_;
-            bits(nbits - 2, fbits) = exp_;
-            bits(fbits - 1, 0) = mant_;
+            bits(nbits - 2, fbits) = -1;
+            bits(fbits - 1, 0) = 0;
+        }
+
+        if (nan_)
+        {
+            bits(nbits - 2, fbits) = -1;
+            bits(fbits - 1, 0) = 1;
         }
 
         return bits;
@@ -276,32 +211,11 @@ public:
     {
         // #pragma HLS INLINE off
 
-        // if (sign_ == 0 && exp_ == 0 && mant_ == 0)
-        if (zero_)
+        if (zero_ || rhs.inf_ || rhs.nan_)
             return rhs;
-        // if (rhs.sign_ == 0 && rhs.exp_ == 0 && rhs.mant_ == 0)
-        if (rhs.zero_)
-            return *this;
 
-        /*
-        if (inf_ && rhs.inf_)
-        {
-            // define your policy here
-            // for now, if opposite signs, return zero or NaN-like state
-            if (sign_ != rhs.sign_)
-            {
-                out.zero_ = 1;
-                out.inf_ = 0;
-                out.sign_ = 0;
-                return out;
-            }
+        if (rhs.zero_ || inf_ || nan_)
             return *this;
-        }
-        if (inf_ == 1)
-            return *this;
-        if (rhs.inf_ == 1)
-            return rhs;
-        */
 
         FloatXUnpacked in1;
         FloatXUnpacked in2;
@@ -397,6 +311,7 @@ public:
 
         out.zero_ = zero_ | rhs.zero_;
         out.inf_ = inf_ | rhs.inf_;
+        out.nan_ = nan_ | rhs.nan_;
         out.sign_ = sign_ ^ rhs.sign_;
 
         ap_uint<ebits + 1> exp = exp_ + rhs.exp_ - (ap_uint<ebits + 1>)fbias<ebits>::value;
@@ -436,6 +351,7 @@ public:
 
         out.zero_ = zero_;
         out.inf_ = rhs.zero_;
+        out.nan_ = nan_ | rhs.nan_;
         out.sign_ = sign_ ^ rhs.sign_;
 
         ap_uint<fbits + 1> num = (ap_uint<1>(1), mant_);
@@ -478,17 +394,20 @@ public:
     {
         // #pragma HLS INLINE off
 
-        FloatXUnpacked result;
+        FloatXUnpacked result = *this;
         result.sign_ = !sign_;
-        result.exp_ = exp_;
-        result.mant_ = mant_;
-
         return result;
     }
 
     bool operator==(const FloatXUnpacked &rhs) const
     {
         // #pragma HLS inline off
+
+        if(nan_ || rhs.nan_)
+            return false;
+
+        if(inf_ || rhs.inf_)
+            return false;
 
         if (zero_)
             if (rhs.zero_)
@@ -514,6 +433,12 @@ public:
     bool operator<(const FloatXUnpacked &rhs) const
     {
         // #pragma HLS inline off
+
+        if(nan_ || rhs.nan_)
+            return false;
+
+        if(inf_ || rhs.inf_)
+            return false;
 
         if (zero_)
             if (rhs.zero_)
@@ -541,6 +466,7 @@ public:
     ap_uint<fbits> mant_;
     bool zero_;
     bool inf_;
+    bool nan_;
 };
 
 template <int nbits, int ebits>
@@ -571,33 +497,8 @@ public:
         return *this;
     }
 
-    template <int in_nbits>
-    FloatX(ap_int<in_nbits> c)
-    {
-        // #pragma HLS inline off
-
-        FloatXUnpacked<nbits, ebits> float_unpacked(c);
-        bits_ = float_unpacked.encode();
-    }
-
-    template <int in_nbits>
-    FloatX(ap_uint<in_nbits> c)
-    {
-        // #pragma HLS inline off
-
-        FloatXUnpacked<nbits, ebits> float_unpacked(c);
-        bits_ = float_unpacked.encode();
-    }
-
-    FloatX(int c)
-    {
-        // #pragma HLS inline off
-
-        FloatXUnpacked<nbits, ebits> float_unpacked(c);
-        bits_ = float_unpacked.encode();
-    }
-
-    FloatX(unsigned int c)
+    template <typename T>
+    FloatX(T c)
     {
         // #pragma HLS inline off
 
@@ -639,9 +540,6 @@ public:
     template <int in_nbits>
     operator ap_int<in_nbits>() const
     {
-        if (bits_ == 0)
-            return 0;
-
         FloatXUnpacked<nbits, ebits> floatx_unpacked;
         floatx_unpacked.decode(bits_);
 
@@ -651,9 +549,6 @@ public:
     operator int() const
     {
         // #pragma HLS inline off
-
-        if (bits_ == 0)
-            return 0;
 
         FloatXUnpacked<nbits, ebits> floatx_unpacked;
         floatx_unpacked.decode(bits_);
@@ -669,9 +564,6 @@ public:
         floatx_unpacked.decode(bits_);
         FloatXUnpacked<32, 8> float_unpacked(floatx_unpacked);
         ap_uint<32> bits = float_unpacked.encode();
-
-        // float fresult = *reinterpret_cast<float *>(&bits);
-        // return fresult;
         return bitcast_f32(bits);
     }
 
@@ -683,9 +575,6 @@ public:
         floatx_unpacked.decode(bits_);
         FloatXUnpacked<64, 11> double_unpacked(floatx_unpacked);
         ap_uint<64> bits = double_unpacked.encode();
-
-        // double fresult = *reinterpret_cast<double *>(&bits);
-        // return fresult;
         return bitcast_f64(bits);
     }
 
