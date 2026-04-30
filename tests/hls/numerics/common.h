@@ -129,10 +129,26 @@ void test(double in_a, double in_b, double out[64])
     out[idx++] = double(a >= b);
 
     // ---------------------------------------------------------------------
+    // Other operators
+    // Store as 0.0 or 1.0
+    // ---------------------------------------------------------------------
+
+    T r_abs = fabs(a);
+    T r_floor = floor(a);
+    T r_ceil = ceil(a);
+    T r_round = round(a);
+    T r_mod = fmod(a, b);
+
+    out[idx++] = double(r_abs);
+    out[idx++] = double(r_floor);
+    out[idx++] = double(r_ceil);
+    out[idx++] = double(r_round);
+    out[idx++] = double(r_mod);
+
+    // ---------------------------------------------------------------------
     // Accumulation patterns
     // ---------------------------------------------------------------------
 
-    /*
     T acc_add = T(0);
     T acc_sub = T(0);
     T acc_mul = T(1);
@@ -154,13 +170,11 @@ acc_loop:
     out[idx++] = double(acc_sub);
     out[idx++] = double(acc_mul);
     out[idx++] = double(acc_div);
-    */
-
+    
     // ---------------------------------------------------------------------
     // Self-assignment style expressions
     // ---------------------------------------------------------------------
-
-    /*
+    
     T s = a;
     s = s + b;
     s = s * T(2);
@@ -168,13 +182,11 @@ acc_loop:
     s = s / T(2);
 
     out[idx++] = double(s);
-    */
-
+    
     // ---------------------------------------------------------------------
     // More parenthesized expressions, useful for checking overload behavior
     // ---------------------------------------------------------------------
-
-    /*
+    
     T expr1 = a + b * T(2);
     T expr2 = (a + b) * T(2);
     T expr3 = a / (b + T(1));
@@ -184,8 +196,7 @@ acc_loop:
     out[idx++] = double(expr2);
     out[idx++] = double(expr3);
     out[idx++] = double(expr4);
-    */
-
+    
     // ---------------------------------------------------------------------
     // Fill remaining outputs with a recognizable value
     // ---------------------------------------------------------------------

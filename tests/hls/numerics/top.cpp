@@ -1,5 +1,8 @@
+#include "hls_numerics/Float.h"
 #include "hls_numerics/FixedX.h"
+#include "hls_numerics/wap_fixed.h"
 #include "hls_numerics/FloatX.h"
+#include "hls_numerics/wap_float.h"
 #include "hls_numerics/Posit.h"
 #include "common.h"
 // not supported on pynq-z1
@@ -25,10 +28,14 @@ extern "C" void top(double in_a, double in_b, double out[64])
     using T = ap_fixed<32, 16>;
 #elif defined(FORMAT_FIXEDX)
     using T = FixedX<32, 16>;
+#elif defined(FORMAT_FIXEDW)
+    using T = wap_fixed<32, 16>;
 #elif defined(FORMAT_FLOAT)
     using T = float;
 #elif defined(FORMAT_FLOATX)
     using T = FloatX<32, 8>;
+#elif defined(FORMAT_FLOATW)
+    using T = wap_float<32, 8>;
 #elif defined(FORMAT_POSIT)
     using T = Posit<32, 3>;
 #else

@@ -54,7 +54,7 @@ public:
     template <int onbits, int oebits>
     posit_unpacked(const FloatXUnpacked<onbits, oebits> &other)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<oebits + 1> oexp = (ap_int<oebits + 1>)(ap_uint<1>(0), other.exp_) - (ap_int<oebits + 1>)fbias<oebits>::value;
         // ap_int<ebits + 1> exp = oexp + (ap_int<ebits + 1>)fbias<ebits>::value;
@@ -91,7 +91,7 @@ public:
 
     FloatXUnpacked<nbits, ebits + m_kbits> tofloatxunpacked() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         FloatXUnpacked<nbits, ebits + m_kbits> floatx_unpacked;
         floatx_unpacked.zero_ = zero_;
@@ -113,7 +113,7 @@ public:
 
     ap_uint<nbits> encode_old() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -186,7 +186,7 @@ public:
 
     ap_uint<nbits> encode1() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -266,7 +266,7 @@ public:
 
     ap_uint<nbits> encode() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -302,7 +302,7 @@ public:
 
     ap_uint<nbits> encode3() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -371,8 +371,7 @@ public:
 
     void decode_old(const ap_uint<nbits> &bits)
     {
-        // #pragma HLS INLINE off      // <- do NOT inline this hardware
-        // #pragma HLS PIPELINE II = 1 // pipeline so a single instance can accept 1/cycle
+        // #pragma HLS INLINE off
 
         zero_ = bits == 0;
         sign_ = bits[nbits - 1];
@@ -456,7 +455,7 @@ public:
 
     void decode(const ap_uint<nbits> &bits)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         zero_ = (bits == 0);
         sign_ = bits[nbits - 1];
@@ -547,7 +546,7 @@ public:
 
     ap_int<m_kbits + ebits> getTotalExp() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_int<m_kbits + ebits> total = k_;
         total <<= ebits;
@@ -558,7 +557,7 @@ public:
     template <int in_ebits>
     void setKEFromTotalExp(ap_int<in_ebits> in_exp)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         k_ = in_exp >> ebits;
         exp_ = in_exp.range(ebits - 1, 0);
@@ -567,7 +566,7 @@ public:
     template <int in_nbits>
     posit_unpacked(ap_int<in_nbits> c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (c == 0)
         {
@@ -589,20 +588,20 @@ public:
         i = i << (lz + 1);
 
         sign_ = psign;
-        ap_int<32> exp = 31 - lz;
+        ap_int<in_nbits> exp = in_nbits - 1 - lz;
 
         setKEFromTotalExp(exp);
 
-        if constexpr (m_fbits <= 32)
-            mant_ = i(31, 32 - m_fbits);
+        if constexpr (m_fbits <= in_nbits)
+            mant_ = i(in_nbits - 1, in_nbits - m_fbits);
         else
-            mant_(m_fbits - 1, m_fbits - 32) = i;
+            mant_(m_fbits - 1, m_fbits - in_nbits) = i;
     }
 
     template <int in_nbits>
     posit_unpacked(ap_uint<in_nbits> c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (c == 0)
         {
@@ -624,19 +623,19 @@ public:
         i = i << (lz + 1);
 
         sign_ = psign;
-        ap_int<32> exp = 31 - lz;
+        ap_int<in_nbits> exp = in_nbits - 1 - lz;
 
         setKEFromTotalExp(exp);
 
-        if constexpr (m_fbits <= 32)
-            mant_ = i(31, 32 - m_fbits);
+        if constexpr (m_fbits <= in_nbits)
+            mant_ = i(in_nbits - 1, in_nbits - m_fbits);
         else
-            mant_(m_fbits - 1, m_fbits - 32) = i;
+            mant_(m_fbits - 1, m_fbits - in_nbits) = i;
     }
 
     posit_unpacked(int c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (c == 0)
         {
@@ -671,7 +670,7 @@ public:
     template <int onbits>
     operator ap_int<onbits>() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -685,7 +684,7 @@ public:
 
     operator ap_int<16>() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -699,7 +698,7 @@ public:
 
     operator int() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -713,7 +712,7 @@ public:
 
     operator unsigned int() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
             return 0;
@@ -725,7 +724,7 @@ public:
 
     posit_unpacked operator+(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         // int exp1 = getTotalExp();
         // int exp2 = rhs.getTotalExp();
@@ -849,7 +848,7 @@ public:
 
     posit_unpacked operator-(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked in2;
         in2.zero_ = rhs.zero_;
@@ -866,7 +865,7 @@ public:
 
     posit_unpacked operator*(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         bool zero = zero_ | rhs.zero_;
         bool inf = inf_ | rhs.inf_;
@@ -930,7 +929,7 @@ public:
 
     posit_unpacked operator/(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         // bool sign = sign_ | rhs.sign_;
         // bool zero = zero_ | rhs.zero_;
@@ -1005,7 +1004,7 @@ public:
 
     posit_unpacked operator-() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked result;
         result.zero_ = zero_;
@@ -1020,62 +1019,56 @@ public:
 
     bool operator==(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
+
+        if (zero_)
+            if (rhs.zero_)
+                return true;
+            else
+                return false;
+
+        if (rhs.zero_)
+            return false;
 
         if (sign_ != rhs.sign_)
-        {
             return false;
-        }
 
         if (k_ != rhs.k_)
-        {
             return false;
-        }
 
         if (exp_ != rhs.exp_)
-        {
             return false;
-        }
 
         if (mant_ != rhs.mant_)
-        {
             return false;
-        }
 
         return true;
     }
 
     bool operator<(const posit_unpacked &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (zero_)
-        {
             if (rhs.zero_)
                 return false;
             else
                 return !rhs.sign_;
-        }
+
+        if (rhs.zero_)
+            return sign_;
 
         if (sign_ != rhs.sign_)
-        {
             return !rhs.sign_;
-        }
 
         if (k_ != rhs.k_)
-        {
             return sign_ != (k_ < rhs.k_);
-        }
 
         if (exp_ != rhs.exp_)
-        {
             return sign_ != (exp_ < rhs.exp_);
-        }
 
         if (mant_ != rhs.mant_)
-        {
             return sign_ != (mant_ < rhs.mant_);
-        }
 
         return false;
     }
@@ -1119,13 +1112,14 @@ public:
 
     Posit(const posit_unpacked<nbits, ebits> &c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
+
         bits_ = c.encode();
     }
 
     operator posit_unpacked<nbits, ebits>() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1135,7 +1129,7 @@ public:
     template <int inbits>
     Posit(ap_int<inbits> c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked(c);
         bits_ = unpacked.encode();
@@ -1144,7 +1138,7 @@ public:
     template <int inbits>
     Posit(ap_uint<inbits> c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked(c);
         bits_ = unpacked.encode();
@@ -1152,7 +1146,7 @@ public:
 
     Posit(int c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked(c);
         bits_ = unpacked.encode();
@@ -1160,7 +1154,7 @@ public:
 
     Posit(float c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_uint<32> bits = bitcast_u32(c);
         FloatXUnpacked<32, 8> float_unpacked;
@@ -1171,7 +1165,7 @@ public:
 
     Posit(double c)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         ap_uint<64> bits = bitcast_u64(c);
         FloatXUnpacked<64, 11> float_unpacked;
@@ -1183,7 +1177,7 @@ public:
     template <int onbits>
     operator ap_int<onbits>() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits_ == 0)
             return 0;
@@ -1195,7 +1189,7 @@ public:
 
     operator int() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1204,7 +1198,7 @@ public:
 
     operator unsigned int() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1213,7 +1207,7 @@ public:
 
     operator float() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1227,7 +1221,7 @@ public:
 
     operator double() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> unpacked;
         unpacked.decode(bits_);
@@ -1267,7 +1261,7 @@ public:
 
     posit_unpacked<nbits, ebits> operator+(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);
@@ -1278,7 +1272,7 @@ public:
 
     posit_unpacked<nbits, ebits> operator-(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);
@@ -1289,7 +1283,7 @@ public:
 
     posit_unpacked<nbits, ebits> operator*(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);
@@ -1300,7 +1294,7 @@ public:
 
     posit_unpacked<nbits, ebits> operator/(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);
@@ -1311,7 +1305,7 @@ public:
 
     posit_unpacked<nbits, ebits> operator-() const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> in1;
         in1.decode(bits_);
@@ -1321,7 +1315,7 @@ public:
 
     Posit &operator+=(const posit_unpacked<nbits, ebits> &rhs)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1332,7 +1326,7 @@ public:
 
     Posit &operator-=(const posit_unpacked<nbits, ebits> &rhs)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1343,7 +1337,7 @@ public:
 
     Posit &operator*=(const posit_unpacked<nbits, ebits> &rhs)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1354,7 +1348,7 @@ public:
 
     Posit &operator/=(const posit_unpacked<nbits, ebits> &rhs)
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1365,7 +1359,7 @@ public:
 
     bool operator<(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1374,7 +1368,7 @@ public:
 
     bool operator>(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1383,7 +1377,7 @@ public:
 
     bool operator<=(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1392,7 +1386,7 @@ public:
 
     bool operator>=(const posit_unpacked<nbits, ebits> &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         posit_unpacked<nbits, ebits> aux;
         aux.decode(bits_);
@@ -1401,7 +1395,7 @@ public:
 
     bool operator==(const Posit &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits_ == rhs.bits_)
             return true;
@@ -1411,7 +1405,7 @@ public:
 
     bool operator!=(const Posit &rhs) const
     {
-#pragma HLS INLINE off
+        // #pragma HLS INLINE off
 
         if (bits_ != rhs.bits_)
             return true;
@@ -1424,51 +1418,60 @@ public:
 };
 
 template <int nbits, int ebits>
-inline Posit<nbits, ebits> abs(const Posit<nbits, ebits> &a)
+inline Posit<nbits, ebits> fabs(const Posit<nbits, ebits> &a)
 {
     Posit<nbits, ebits> b = a;
-    if (b.bits_[nbits - 1] == 1)
-        b.bits_[nbits - 1] == 0;
+    b.bits_[nbits - 1] = 0;
     return b;
-}
-
-template <int nbits, int ebits>
-inline Posit<nbits, ebits> round(const Posit<nbits, ebits> &a)
-{
-    int integer = int(a);
-    Posit<nbits, ebits> diff = a - Posit<nbits, ebits>(integer);
-    if (diff > Posit<nbits, ebits>(0.5))
-        integer++;
-    return Posit<nbits, ebits>(integer);
 }
 
 template <int nbits, int ebits>
 inline Posit<nbits, ebits> floor(const Posit<nbits, ebits> &a)
 {
-    int integer = int(a);
-    return Posit<nbits, ebits>(integer);
+    Posit<nbits, ebits> f_int = int(a);
+    return f_int;
 }
 
 template <int nbits, int ebits>
 inline Posit<nbits, ebits> ceil(const posit_unpacked<nbits, ebits> &a)
 {
-    int integer = int(a);
-    posit_unpacked<nbits, ebits> diff = a - posit_unpacked<nbits, ebits>(integer);
+    Posit<nbits, ebits> f_int = int(a);
+    posit_unpacked<nbits, ebits> diff = a - f_int;
     if (posit_unpacked<nbits, ebits>(0) < diff)
-        integer++;
-    return Posit<nbits, ebits>(integer);
+        f_int += posit_unpacked<nbits, ebits>(1);
+    return f_int;
 }
 
 template <int nbits, int ebits>
-inline Posit<nbits, ebits> mod(const Posit<nbits, ebits> &a, const Posit<nbits, ebits> &b)
+inline Posit<nbits, ebits> ceil(const Posit<nbits, ebits> &a)
+{
+    Posit<nbits, ebits> f_int = int(a);
+    Posit<nbits, ebits> diff = a - f_int;
+    if (Posit<nbits, ebits>(0) < diff)
+        f_int += Posit<nbits, ebits>(1);
+    return f_int;
+}
+
+template <int nbits, int ebits>
+inline Posit<nbits, ebits> round(const Posit<nbits, ebits> &a)
+{
+    Posit<nbits, ebits> f_int = int(a);
+    Posit<nbits, ebits> diff = a - f_int;
+    if (Posit<nbits, ebits>(0.5) < diff)
+        f_int += Posit<nbits, ebits>(1);
+    return f_int;
+}
+
+template <int nbits, int ebits>
+inline Posit<nbits, ebits> fmod(const Posit<nbits, ebits> &a, const Posit<nbits, ebits> &b)
 {
     Posit<nbits, ebits> c = a / b;
     Posit<nbits, ebits> d = a - floor(c) * b;
-    return b;
+    return d;
 }
 
 template <int nbits, int ebits>
 inline Posit<nbits, ebits> exp(const Posit<nbits, ebits> &a)
 {
-    return a;
+    return Posit<nbits, ebits>(21);
 }

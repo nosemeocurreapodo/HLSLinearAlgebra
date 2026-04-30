@@ -3,7 +3,7 @@
 #include "hls_math.h"
 
 template <typename T>
-inline T abs(const T &a)
+inline T fabs(const T &a)
 {
     return hls::abs(a);
 }
@@ -27,7 +27,7 @@ inline T ceil(const T &a)
 }
 
 template <typename T>
-inline T mod(const T &a, const T &b)
+inline T fmod(const T &a, const T &b)
 {
     return hls::fmod(a, b);
 }

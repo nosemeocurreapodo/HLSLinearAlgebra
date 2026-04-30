@@ -137,19 +137,19 @@ public:
         return res;
     }
 
-    operator unsigned int() const
-    {
-        int res = bits_;
-        if (res < 0)
-            res = -res;
-        res = res >> fbits;
-        return (unsigned int)res;
-    }
-
     operator int() const
     {
-        int res = bits_ >> fbits;
+        ap_int<nbits> aux = bits_;
+        ap_int<ibits> res = aux(nbits - 1, fbits);
+        if (aux < 0 && aux(fbits - 1, 0) > 0)
+            res += 1;
         return res;
+    }
+
+    operator unsigned int() const
+    {
+        int res = int(*this);
+        return (unsigned int)res;
     }
 
     operator float() const
@@ -340,56 +340,48 @@ public:
 };
 
 template <int nbits, int ibits>
-inline FixedX<nbits, ibits> abs(const FixedX<nbits, ibits> &a)
+inline FixedX<nbits, ibits> fabs(const FixedX<nbits, ibits> &a)
 {
     return a.bits_ >= 0 ? a : -a;
 }
 
 template <int nbits, int ibits>
-inline FixedX<nbits, ibits> round(const FixedX<nbits, ibits> &a)
-{
-    FixedX<nbits, ibits> b = a;
-    b.bits_(nbits - ibits - 1, 0) = 0;
-    return b;
-}
-
-template <int nbits, int ibits>
 inline FixedX<nbits, ibits> floor(const FixedX<nbits, ibits> &a)
 {
-    FixedX<nbits, ibits> b = a;
-    b.bits_(nbits - ibits - 1, 0) = 0;
+    FixedX<nbits, ibits> b = int(a);
     return b;
 }
 
 template <int nbits, int ibits>
 inline FixedX<nbits, ibits> ceil(const FixedX<nbits, ibits> &a)
 {
-    FixedX<nbits, ibits> b = a;
-    b.bits_(nbits - ibits - 1, 0) = 0;
+    FixedX<nbits, ibits> b = int(a);
+    FixedX<nbits, ibits> diff = a - b;
+    if (diff > FixedX<nbits, ibits>(0))
+        b += FixedX<nbits, ibits>(1);
     return b;
 }
 
 template <int nbits, int ibits>
-inline FixedX<nbits, ibits> mod(const FixedX<nbits, ibits> &a, const FixedX<nbits, ibits> &b)
+inline FixedX<nbits, ibits> round(const FixedX<nbits, ibits> &a)
+{
+    FixedX<nbits, ibits> b = int(a);
+    FixedX<nbits, ibits> diff = a - b;
+    if (diff > FixedX<nbits, ibits>(0.5))
+        b += FixedX<nbits, ibits>(1);
+    return b;
+}
+
+template <int nbits, int ibits>
+inline FixedX<nbits, ibits> fmod(const FixedX<nbits, ibits> &a, const FixedX<nbits, ibits> &b)
 {
     FixedX<nbits, ibits> c = a / b;
     FixedX<nbits, ibits> d = a - floor(c) * b;
-    return b;
+    return d;
 }
 
 template <int nbits, int ibits>
 inline FixedX<nbits, ibits> exp(const FixedX<nbits, ibits> &a)
 {
-    return a;
+    return FixedX<nbits, ibits>(1);
 }
-
-/*
-template <int nbits, int ebits>
-FloatX<nbits, ebits> lround(const FloatX<nbits, ebits> &a)
-{
-    // return hls::lround(a);
-    // return RealType(int(a + (a >= RealType(0) ? RealType(0.5) : RealType(-0.5))));
-    //  return static_cast<T>(static_cast<long>(a + (a >= 0 ? 0.5 : -0.5)));
-    return a;
-}
-*/
